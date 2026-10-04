@@ -9,6 +9,7 @@
     <link rel="apple-touch-icon" href="https://i.imgur.com/Srn2y30.png">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         :root {
@@ -723,7 +724,7 @@
                 </div>
                 <span class="spacer"></span>
                 <button type="button" class="btn" data-action="download-ducks">Download CSV</button>
-                <button type="button" class="btn" data-action="print-all">Print QR codes</button>
+                <button type="button" class="btn" data-action="pdf-all">Download PDF</button>
                 <button type="button" class="btn" data-action="bulk-create">Bulk create</button>
                 <button type="button" class="btn btn-primary" data-action="add-duck">+ Add duck</button>
             </div>
@@ -737,7 +738,7 @@
                 <button type="button" class="btn btn-sm" data-action="bulk-deactivate">Deactivate</button>
                 <label>Location <select id="bulk-location" class="location-select" data-empty="No location"></select></label>
                 <button type="button" class="btn btn-sm" data-action="bulk-location">Set</button>
-                <button type="button" class="btn btn-sm" data-action="print-selected">Print QR codes</button>
+                <button type="button" class="btn btn-sm" data-action="pdf-selected">Download PDF</button>
                 <button type="button" class="btn btn-sm" data-action="download-selected">Download CSV</button>
                 <button type="button" class="btn btn-sm btn-danger" data-action="bulk-delete">Delete</button>
                 <button type="button" class="link" data-action="clear-selection">Clear</button>
@@ -1686,98 +1687,18 @@
             return /duck|code/i.test(t) ? t : `${t} Duck`;
         }
 
-        // ---------- PRINTING: OL3625 label sheets ----------
+        // ---------- LABEL PDF: OL3625 label sheets ----------
         // 1" square labels, 7 x 9 = 63 per letter sheet. This is the exact
-        // OL3625 template; one QR code per label, extra sheets as needed.
-        const LABELS_PER_SHEET = 63;
-        const OL3625_STYLE = `
-    /* --- OL3625 LABEL VARIABLES --- */
-    :root {
-        --page-width: 8.5in;
-        --page-height: 11in;
-
-        /* Standard OL3625 margins */
-        --page-margin-top: 0.5in;
-        --page-margin-left: 0.3125in;
-
-        /* 1-inch square labels */
-        --label-width: 1in;
-        --label-height: 1in;
-
-        /* 7x9 Grid = 63 labels per page */
-        --columns: 7;
-        --rows: 9;
-
-        /* Spacing between labels */
-        --gap-horizontal: 0.125in;
-        --gap-vertical: 0.125in;
-    }
-
-    @page {
-        size: letter;
-        margin: 0;
-    }
-
-    body {
-        margin: 0;
-        padding: 0;
-        background-color: #f0f0f0;
-        font-family: sans-serif;
-        -webkit-print-color-adjust: exact;
-    }
-
-    .sheet {
-        width: var(--page-width);
-        height: var(--page-height);
-        padding-top: var(--page-margin-top);
-        padding-left: var(--page-margin-left);
-        background: white;
-        margin: 0 auto;
-        box-sizing: border-box;
-        page-break-after: always;
-        position: relative;
-    }
-
-    .label-grid {
-        display: grid;
-        grid-template-columns: repeat(var(--columns), var(--label-width));
-        grid-template-rows: repeat(var(--rows), var(--label-height));
-        column-gap: var(--gap-horizontal);
-        row-gap: var(--gap-vertical);
-    }
-
-    .label {
-        width: var(--label-width);
-        height: var(--label-height);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-sizing: border-box;
-        /* Print testing border - remove when printing on actual labels */
-        border: 1px dashed #e5e7eb;
-    }
-
-    .label img, .label canvas {
-        max-width: 90%;
-        max-height: 90%;
-        object-fit: contain;
-    }
-
-    @media print {
-        body { background-color: white; }
-        .sheet { margin: 0; box-shadow: none; padding-top: var(--page-margin-top); padding-left: var(--page-margin-left); }
-        .label { border: none; }
-    }
-
-    /* Tiny "type · ID" caption in the gap under each label. Absolutely
-       positioned, so the grid, labels and QR size are untouched. */
-    .label { position: relative; }
-    .label .caption {
-        position: absolute; top: 100%; left: calc(var(--gap-horizontal) / -2); right: calc(var(--gap-horizontal) / -2); height: var(--gap-vertical);
-        display: flex; align-items: center; justify-content: center;
-        font-size: 5pt; line-height: 1; color: #333; letter-spacing: 0.01em;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }`;
+        // OL3625 template (all sizes in inches); one QR code per label, extra
+        // pages as needed. Print the PDF at 100% / "Actual size".
+        const OL3625 = {
+            pageWidth: 8.5, pageHeight: 11,
+            marginTop: 0.5, marginLeft: 0.3125,
+            label: 1, columns: 7, rows: 9,
+            gap: 0.125,     // between labels, both directions
+            qr: 0.9,        // QR fills 90% of the label
+        };
+        const LABELS_PER_SHEET = OL3625.columns * OL3625.rows;
 
         // QR code as a PNG data URL (rendered off-screen at print resolution)
         function qrDataURL(text) {
@@ -1791,46 +1712,41 @@
             return /^(virtual|hologram|holo)( (duck|code))?$/.test(String(type || '').trim().toLowerCase());
         }
 
-        function printLabels(allDucks) {
+        function downloadLabelsPDF(allDucks, filename = `duck-hunt-labels-${today()}.pdf`) {
             const ducks = allDucks.filter(d => !isHologram(d.duck_type));
             const skipped = allDucks.length - ducks.length;
             if (!ducks.length) return snackbar(skipped ? 'Hologram codes are virtual, so there\'s nothing to print.' : 'No ducks to print.');
             if (typeof qrcode === 'undefined') return snackbar('QR library failed to load. Reload and try again.');
-            // Open the window right away (inside the click) so pop-up blockers allow it
-            const win = window.open('', '_blank');
-            if (!win) return snackbar('Allow pop-ups for this site to print labels.');
+            if (!window.jspdf) return snackbar('PDF library failed to load. Reload and try again.');
 
-            const labels = ducks.map(d => {
+            const L = OL3625;
+            const pdf = new window.jspdf.jsPDF({ unit: 'in', format: 'letter', orientation: 'portrait' });
+            pdf.setFont('helvetica', 'normal');
+            pdf.setTextColor(51, 51, 51);
+            const captionWidth = L.label + L.gap;
+            ducks.forEach((d, i) => {
+                const slot = i % LABELS_PER_SHEET;
+                if (i && !slot) pdf.addPage();
+                const x = L.marginLeft + (slot % L.columns) * (L.label + L.gap);
+                const y = L.marginTop + Math.floor(slot / L.columns) * (L.label + L.gap);
+                const inset = (L.label - L.qr) / 2;
+                pdf.addImage(qrDataURL(duckLink(d)), 'PNG', x + inset, y + inset, L.qr, L.qr, undefined, 'FAST');
+
+                // Tiny "type · ID" caption in the gap under each label,
+                // shrunk (down to 3.5pt) and then trimmed to fit
                 const type = String(d.duck_type || '').replace(/\s+duck$/i, '').trim(); // "Golden Duck" -> "Golden"
-                const caption = [type, d.duck_id].filter(Boolean).join(' · ');
-                return `<div class="label"><img src="${qrDataURL(duckLink(d))}" alt="${esc(d.duck_id)}"><span class="caption">${esc(caption)}</span></div>`;
+                let caption = [type, d.duck_id].filter(Boolean).join(' \u00b7 ');
+                let pt = 5;
+                pdf.setFontSize(pt);
+                while (pdf.getTextWidth(caption) > captionWidth && pt > 3.5) pdf.setFontSize(pt -= 0.25);
+                while (pdf.getTextWidth(caption) > captionWidth && caption.length > 1) caption = caption.slice(0, -2) + '\u2026';
+                pdf.text(caption, x + L.label / 2, y + L.label + L.gap / 2, { align: 'center', baseline: 'middle' });
             });
-            const sheets = [];
-            for (let i = 0; i < labels.length; i += LABELS_PER_SHEET) {
-                sheets.push(`<div class="sheet">\n    <div class="label-grid">\n${labels.slice(i, i + LABELS_PER_SHEET).join('\n')}\n    </div>\n</div>`);
-            }
+            pdf.save(filename);
+
             const count = ducks.length;
-            win.document.open();
-            win.document.write(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QR Code Labels - OL3625 (${count} duck${count === 1 ? '' : 's'})</title>
-<style>${OL3625_STYLE}
-</style>
-</head>
-<body>
-${sheets.join('\n')}
-</body>
-</html>`);
-            win.document.close();
-            // Shrink any caption that's too long for its label (down to 3.5pt)
-            win.document.querySelectorAll('.caption').forEach(c => {
-                for (let pt = 5; c.scrollWidth > c.clientWidth && pt > 3.5; pt -= 0.25) c.style.fontSize = pt - 0.25 + 'pt';
-            });
-            setTimeout(() => { win.focus(); win.print(); }, 400);
-            snackbar(`Printing ${count} label${count === 1 ? '' : 's'} on ${sheets.length} OL3625 sheet${sheets.length === 1 ? '' : 's'}` +
+            const pages = Math.ceil(count / LABELS_PER_SHEET);
+            snackbar(`Downloaded ${count} label${count === 1 ? '' : 's'} on ${pages} OL3625 sheet${pages === 1 ? '' : 's'}` +
                 (skipped ? ` (skipped ${skipped} hologram code${skipped === 1 ? '' : 's'}).` : '.'));
         }
 
@@ -1903,8 +1819,8 @@ ${sheets.join('\n')}
                     return link.click();
                 }
 
-                case 'print-all': return printLabels(visibleDucks());
-                case 'print-selected': return printLabels(visibleDucks().filter(d => selected.has(d.duck_id)));
+                case 'pdf-all': return downloadLabelsPDF(visibleDucks());
+                case 'pdf-selected': return downloadLabelsPDF(visibleDucks().filter(d => selected.has(d.duck_id)));
                 case 'download-ducks': return duckCSV(visibleDucks(), `duck-hunt-ducks-${today()}.csv`);
                 case 'download-selected': return duckCSV(visibleDucks().filter(d => selected.has(d.duck_id)), `duck-hunt-ducks-${today()}.csv`);
                 case 'clear-selection': selected.clear(); return render();
@@ -2010,9 +1926,9 @@ ${sheets.join('\n')}
                         snackbar(`${id} marked fixed.`);
                         await load();
                     });
-                case 'print-one': {
+                case 'pdf-one': {
                     const duck = findDuck(id);
-                    return duck && printLabels([duck]);
+                    return duck && downloadLabelsPDF([duck], `duck-hunt-label-${duck.duck_id}.pdf`);
                 }
                 case 'download-reports':
                     return downloadCSV(`duck-hunt-reports-${today()}.csv`,
@@ -2252,7 +2168,7 @@ ${sheets.join('\n')}
             $('broken-ducks').hidden = !broken.length;
             $('broken-ducks').innerHTML = broken.length ? `<b>⚠ Labels reported broken:</b>` + broken.map(d => `
                 <span class="broken-chip">${esc(d.duck_id)}${d.location ? ' · ' + esc(d.location) : ''} (${d.broken_reports})
-                    <button type="button" class="btn btn-sm" data-action="print-one" data-id="${esc(d.duck_id)}">Print label</button>
+                    <button type="button" class="btn btn-sm" data-action="pdf-one" data-id="${esc(d.duck_id)}">Label PDF</button>
                     <button type="button" class="btn btn-sm" data-action="clear-broken" data-id="${esc(d.duck_id)}">Mark fixed</button>
                 </span>`).join('') : '';
 
@@ -2526,7 +2442,7 @@ ${sheets.join('\n')}
                     const n = await rpc('admin_bulk_create_ducks', { p_ducks: ducks });
                     if ($('b-active').checked) await rpc('admin_set_ducks_active', { p_duck_ids: ids, p_active: true });
                     $('bulk-dialog').close();
-                    snackbar(`Created ${n} ducks. Select them to print their QR codes.`);
+                    snackbar(`Created ${n} ducks. Select them to download their QR label PDF.`);
                     $('duck-search').value = '';
                     selected.clear();
                     ids.forEach(id => selected.add(id));
