@@ -841,7 +841,6 @@
                         <option value="">All results</option>
                         <option value="honored">Honored</option>
                         <option value="denied">Not honored</option>
-                        <option value="review">Needs a look</option>
                         <option value="reversed">Undone</option>
                     </select>
                 </div>
@@ -868,7 +867,7 @@
                     <tbody id="report-rows"></tbody>
                 </table>
             </div>
-            <p class="footnote">Reports are resolved automatically: a rescuer gets the duck they named, or an available duck of that kind at the location they picked (golden ducks only by exact ID). Each rescuer can have 5 Rebel duck and 10 hologram code reports honored. Undo takes the points back and re-opens the duck.</p>
+            <p class="footnote">Reports are resolved automatically: a rescuer who names the duck (ID or code) gets that duck and it's flagged for reprinting; otherwise they get the standard points for that kind of duck and no other duck is used up. Each rescuer can have 5 Rebel duck and 10 hologram code reports honored. Undo takes the points back (and re-opens a named duck).</p>
         </section>
 
         <!-- Messages: announcements every player sees as a hologram pop-up -->
@@ -1488,7 +1487,7 @@
                     <td class="muted">${esc(formatDate(s.scanned_at))}</td>
                     <td><b>${esc(s.player_name)}</b></td>
                     <td class="mono">${esc(s.student_id)}</td>
-                    <td>${s.duck_id ? esc(s.duck_id) : '<span class="muted">Deleted duck</span>'}</td>
+                    <td>${s.duck_id ? esc(s.duck_id) : s.source === 'report' ? '<span class="muted">Reported (points only)</span>' : '<span class="muted">Deleted duck</span>'}</td>
                     <td><span class="group-tag">${esc(s.duck_type)}</span></td>
                     <td class="num"><b>${esc(s.points)}</b></td>
                     <td class="actions"><div class="action-wrapper"><button type="button" class="btn-icon-sq danger" data-action="undo-scan" data-id="${esc(s.id)}" title="Undo scan" aria-label="Undo scan">${ICONS.undo}</button></div></td>
@@ -1919,7 +1918,7 @@ ${sheets.join('\n')}
                     const r = (state.reports || []).find(x => String(x.id) === id);
                     if (!r) return;
                     const ok = await confirmDialog('Undo this report?',
-                        `${r.player_name || r.student_id} loses ${r.points} points and ${r.duck_id || 'the duck'} can be found again. The report no longer counts toward their limit.`, 'Undo', true);
+                        `${r.player_name || r.student_id} loses ${r.points} points${r.duck_id ? ` and ${r.duck_id} can be found again` : ''}. The report no longer counts toward their limit.`, 'Undo', true);
                     if (!ok) return;
                     return busy(el, async () => {
                         await rpc('admin_reverse_report', { p_id: Number(id) });
@@ -2161,7 +2160,7 @@ ${sheets.join('\n')}
         });
 
         // ---------- REPORTS ----------
-        const REPORT_LABELS = { honored: 'Honored', denied: 'Not honored', review: 'Needs a look', reversed: 'Undone' };
+        const REPORT_LABELS = { honored: 'Honored', denied: 'Not honored', review: 'Needs a look', reversed: 'Undone' }; // 'review' is from older reports
 
         function renderReports() {
             const reports = state.reports || [];
