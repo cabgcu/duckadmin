@@ -802,6 +802,11 @@
     <div id="print-area"></div>
 
     <script>
+        // ---------- STUDENT SITE ----------
+        // Address of the student Duck Hunt site (where index.html is hosted).
+        // QR codes link here so a phone's normal camera can scan them.
+        const STUDENT_SITE_URL = '';
+
         // ---------- SUPABASE ----------
         // Same project as index.html. Admin access comes from signing in with
         // an account listed in private.admins, never from a key in this page.
@@ -1249,12 +1254,22 @@
             new QRCode(el, { text, width: size, height: size, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
         }
 
+        // Printed QR codes are links to the student site, so a phone's own camera
+        // opens the site and claims the duck. The in-app scanner reads them too.
+        // Leave empty to print bare codes (only the in-app scanner can read those).
+        function duckLink(duck) {
+            if (!STUDENT_SITE_URL) return duck.qr_code;
+            const url = new URL(STUDENT_SITE_URL);
+            url.searchParams.set('duck', duck.qr_code);
+            return url.href;
+        }
+
         let qrDuckId = null;
         function openQRDialog(duck) {
             qrDuckId = duck.duck_id;
             $('qr-title').textContent = `${duck.duck_id}${duck.duck_type ? ' · ' + duck.duck_type : ''}`;
             $('qr-text').textContent = duck.qr_code;
-            renderQR($('qr-box'), duck.qr_code, 512);
+            renderQR($('qr-box'), duckLink(duck), 512);
             $('qr-dialog').showModal();
         }
 
@@ -1267,7 +1282,7 @@
                     <b>${esc(d.duck_id)}</b>
                     <span>${esc(d.duck_type ? d.duck_type + ' Duck' : 'Duck')} · ${esc(d.points)} pts</span>
                 </div>`).join('');
-            ducks.forEach((d, i) => renderQR($('print-qr-' + i), d.qr_code, 400));
+            ducks.forEach((d, i) => renderQR($('print-qr-' + i), duckLink(d), 400));
             setTimeout(() => window.print(), 300);
         }
 
