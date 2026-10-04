@@ -370,6 +370,8 @@
         td.check, th.check { width: 48px; padding-right: 0; }
         td.empty { text-align: center; color: var(--text-muted); height: 120px; white-space: normal; }
         .rank { font-weight: 800; color: #a78bfa; }
+        .pager { display: flex; align-items: center; gap: 8px; }
+        .pager .spacer { flex: 1; }
         .footnote { color: var(--text-muted); font-size: 12px; margin: 0; padding: 12px 24px; border-top: 1px solid var(--border-light); background: rgba(0, 0, 0, 0.25); }
 
         input.cell-num {
@@ -606,7 +608,7 @@
                 <table>
                     <thead>
                         <tr>
-                            <th class="check"><input id="select-all" type="checkbox" aria-label="Select all"></th>
+                            <th class="check"><input id="select-all" type="checkbox" aria-label="Select all on this page" title="Select all on this page"></th>
                             <th class="sortable" data-sort="ducks" data-key="duck_id">Duck ID</th>
                             <th class="sortable" data-sort="ducks" data-key="duck_type">Type</th>
                             <th class="sortable num" data-sort="ducks" data-key="points">Points</th>
@@ -620,6 +622,13 @@
                     </thead>
                     <tbody id="duck-rows"></tbody>
                 </table>
+            </div>
+            <div id="duck-pager" class="footnote pager" hidden>
+                <span id="duck-page-info"></span>
+                <span class="spacer"></span>
+                <button type="button" class="btn btn-sm" data-action="duck-page" data-dir="-1">Previous</button>
+                <span id="duck-page-num"></span>
+                <button type="button" class="btn btn-sm" data-action="duck-page" data-dir="1">Next</button>
             </div>
         </section>
 
@@ -811,6 +820,10 @@
         const sort = { ducks: { key: 'duck_id', dir: 1 }, players: { key: 'place', dir: 1 } };
         const selected = new Set();
         let activeTab = 'ducks';
+        // The duck table shows one page at a time so big hunts stay fast;
+        // search, sort, print and CSV still cover every duck.
+        const DUCK_PAGE_SIZE = 100;
+        let duckPage = 0;
         let channel = null;
         let reloadTimer = null;
         let pollTimer = null;
@@ -1048,8 +1061,18 @@
                 matches(d, ['duck_id', 'duck_type', 'location', 'qr_code', 'claimed_by_name', 'claimed_by'], term)), 'ducks');
         }
 
+        function duckPageCount(total) {
+            return Math.max(1, Math.ceil(total / DUCK_PAGE_SIZE));
+        }
+
+        function pagedDucks(all) {
+            duckPage = Math.min(Math.max(duckPage, 0), duckPageCount(all.length) - 1);
+            return all.slice(duckPage * DUCK_PAGE_SIZE, (duckPage + 1) * DUCK_PAGE_SIZE);
+        }
+
         function renderDucks() {
-            const ducks = visibleDucks();
+            const all = visibleDucks();
+            const ducks = pagedDucks(all);
             $('duck-rows').innerHTML = ducks.length ? ducks.map(d => `
                 <tr class="${selected.has(d.duck_id) ? 'selected' : ''}">
                     <td class="check"><input type="checkbox" data-select="${esc(d.duck_id)}" ${selected.has(d.duck_id) ? 'checked' : ''} aria-label="Select ${esc(d.duck_id)}"></td>
@@ -1069,6 +1092,15 @@
                     </div></td>
                 </tr>`).join('') :
                 `<tr><td class="empty" colspan="10">${state.ducks.length ? 'No ducks match your search.' : 'No ducks yet. Use Add duck or Bulk create.'}</td></tr>`;
+
+            const pages = duckPageCount(all.length);
+            $('duck-pager').hidden = all.length <= DUCK_PAGE_SIZE;
+            $('duck-page-info').textContent = `Showing ${(duckPage * DUCK_PAGE_SIZE + 1).toLocaleString()}–` +
+                `${(duckPage * DUCK_PAGE_SIZE + ducks.length).toLocaleString()} of ${all.length.toLocaleString()} ducks`;
+            $('duck-page-num').textContent = `Page ${duckPage + 1} of ${pages}`;
+            document.querySelectorAll('[data-action="duck-page"]').forEach(b => {
+                b.disabled = b.dataset.dir < 0 ? duckPage === 0 : duckPage >= pages - 1;
+            });
 
             const allVisibleSelected = ducks.length > 0 && ducks.every(d => selected.has(d.duck_id));
             $('select-all').checked = allVisibleSelected;
@@ -1258,6 +1290,7 @@
                 const s = sort[th.dataset.sort];
                 s.dir = s.key === th.dataset.key ? -s.dir : 1;
                 s.key = th.dataset.key;
+                if (th.dataset.sort === 'ducks') duckPage = 0;
                 return render();
             }
 
@@ -1306,6 +1339,10 @@
                 case 'download-ducks': return duckCSV(visibleDucks(), `duck-hunt-ducks-${today()}.csv`);
                 case 'download-selected': return duckCSV(visibleDucks().filter(d => selected.has(d.duck_id)), `duck-hunt-ducks-${today()}.csv`);
                 case 'clear-selection': selected.clear(); return render();
+                case 'duck-page':
+                    duckPage += Number(el.dataset.dir);
+                    renderDucks();
+                    return $('panel-ducks').querySelector('.table-wrap').scrollTop = 0;
 
                 case 'bulk-points': {
                     const points = parseInt($('bulk-points').value, 10);
@@ -1411,7 +1448,7 @@
                 return renderDucks();
             }
             if (t.id === 'select-all') {
-                visibleDucks().forEach(d => t.checked ? selected.add(d.duck_id) : selected.delete(d.duck_id));
+                pagedDucks(visibleDucks()).forEach(d => t.checked ? selected.add(d.duck_id) : selected.delete(d.duck_id));
                 return renderDucks();
             }
             if (t.dataset.pointsDuck !== undefined || t.dataset.pointsPlayer !== undefined) savePoints(t);
@@ -1464,7 +1501,7 @@
             }
         });
 
-        $('duck-search').addEventListener('input', renderDucks);
+        $('duck-search').addEventListener('input', () => { duckPage = 0; renderDucks(); });
         $('rescuer-search').addEventListener('input', renderRescuers);
         $('scan-search').addEventListener('input', renderScans);
 
@@ -1506,6 +1543,8 @@
                     selected.clear();
                     ids.forEach(id => selected.add(id));
                     await load();
+                    const first = visibleDucks().findIndex(d => d.duck_id === ids[0]);
+                    if (first >= 0) { duckPage = Math.floor(first / DUCK_PAGE_SIZE); renderDucks(); }
                 } catch (err) {
                     showError('bulk-error', err.message);
                 }
