@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex">
     <title>Duck Hunt Admin</title>
+    <link rel="icon" type="image/png" href="https://i.imgur.com/Srn2y30.png">
+    <link rel="apple-touch-icon" href="https://i.imgur.com/Srn2y30.png">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -840,6 +842,7 @@
                     <select id="report-filter" aria-label="Filter by result">
                         <option value="">All results</option>
                         <option value="honored">Honored</option>
+                        <option value="review">Under review</option>
                         <option value="denied">Not honored</option>
                         <option value="reversed">Undone</option>
                     </select>
@@ -867,7 +870,7 @@
                     <tbody id="report-rows"></tbody>
                 </table>
             </div>
-            <p class="footnote">Reports are resolved automatically: a rescuer who names the duck (ID or code) gets that duck and it's flagged for reprinting; otherwise they get the standard points for that kind of duck and no other duck is used up. Each rescuer can have 5 Rebel duck and 10 hologram code reports honored. Undo takes the points back (and re-opens a named duck).</p>
+            <p class="footnote">Reports are resolved automatically: a rescuer who names the duck (ID or code) gets that duck and it's flagged for reprinting; otherwise they get the standard points for that kind of duck and no other duck is used up. The first 5 Rebel duck and 10 hologram code reports per rescuer are honored automatically; after that they come here as Under review for you to approve or deny. Undo takes the points back (and re-opens a named duck).</p>
         </section>
 
         <!-- Messages: announcements every player sees as a hologram pop-up -->
@@ -1926,6 +1929,18 @@ ${sheets.join('\n')}
                         await load();
                     });
                 }
+                case 'approve-report':
+                    return busy(el, async () => {
+                        const award = await rpc('admin_approve_report', { p_id: Number(id) });
+                        snackbar(`Approved: +${award.points} pts${award.duck_id ? ' (' + award.duck_id + ')' : ''}.`);
+                        await load();
+                    });
+                case 'deny-report':
+                    return busy(el, async () => {
+                        await rpc('admin_deny_report', { p_id: Number(id) });
+                        snackbar('Report denied.');
+                        await load();
+                    });
                 case 'clear-broken':
                     return busy(el, async () => {
                         await rpc('admin_clear_duck_reports', { p_duck_id: id });
@@ -2160,13 +2175,14 @@ ${sheets.join('\n')}
         });
 
         // ---------- REPORTS ----------
-        const REPORT_LABELS = { honored: 'Honored', denied: 'Not honored', review: 'Needs a look', reversed: 'Undone' }; // 'review' is from older reports
+        const REPORT_LABELS = { honored: 'Honored', denied: 'Not honored', review: 'Under review', reversed: 'Undone' };
 
         function renderReports() {
             const reports = state.reports || [];
             const review = reports.filter(r => r.status === 'review').length;
-            $('count-reports').textContent = reports.length || '';
-            $('count-reports').title = review ? `${review} need a look` : '';
+            // The tab badge counts reports waiting on you
+            $('count-reports').textContent = review || '';
+            $('count-reports').title = review ? `${review} under review` : '';
 
             // Ducks whose labels were reported broken
             const broken = state.ducks.filter(d => d.broken_reports > 0);
@@ -2193,6 +2209,8 @@ ${sheets.join('\n')}
                     <td><span class="status-pill ${esc(r.status)}">${REPORT_LABELS[r.status] || esc(r.status)}</span><span class="report-outcome">${esc(r.outcome)}</span></td>
                     <td class="num">${r.points ? '+' + esc(r.points) : ''}</td>
                     <td class="actions"><div class="action-wrapper">
+                        ${r.status === 'review' ? `<button type="button" class="btn btn-sm" data-action="approve-report" data-id="${esc(r.id)}" title="Award the duck they named, or the standard points">Approve</button>
+                            <button type="button" class="btn btn-sm btn-danger" data-action="deny-report" data-id="${esc(r.id)}">Deny</button>` : ''}
                         ${r.status === 'honored' ? `<button type="button" class="btn-icon-sq danger" data-action="reverse-report" data-id="${esc(r.id)}" title="Undo: take the points back and re-open the duck" aria-label="Undo report">${ICONS.undo}</button>` : ''}
                     </div></td>
                 </tr>`).join('') :
