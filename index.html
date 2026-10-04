@@ -459,6 +459,20 @@
         .location-list li b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .location-list li span { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 
+        /* ── HUNT ON / OFF ── */
+        .hunt-toggle {
+            display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px 0 6px;
+            border-radius: 999px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;
+            cursor: pointer; border: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger-text);
+            transition: all 0.2s;
+        }
+        .hunt-toggle i { position: relative; width: 30px; height: 18px; border-radius: 999px; background: rgba(255, 255, 255, 0.15); transition: background 0.2s; }
+        .hunt-toggle i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.2s; }
+        .hunt-toggle.on { border-color: var(--success-border); background: var(--success-bg); color: var(--success-text); }
+        .hunt-toggle.on i { background: var(--success-text); box-shadow: 0 0 10px var(--success-text); }
+        .hunt-toggle.on i::after { transform: translateX(12px); }
+        .hunt-toggle:disabled { opacity: 0.6; cursor: wait; }
+
         /* ── MESSAGES ── */
         textarea {
             width: 100%; min-height: 140px; padding: 12px 14px; resize: vertical;
@@ -632,6 +646,7 @@
                     <h1>Duck Hunt Admin</h1>
                     <div class="event-subtext">
                         <span id="live" class="live"><i></i><span id="live-label">Connecting</span></span>
+                        <button type="button" id="hunt-toggle" class="hunt-toggle" data-action="toggle-hunt" title="Turn Duck Hunt on or off" hidden><i></i><span id="hunt-label">Hunt on</span></button>
                         <span id="who" class="who"></span>
                     </div>
                 </div>
@@ -990,7 +1005,7 @@
         }
 
         // ---------- STATE ----------
-        const state = { ducks: [], players: [], scans: [], total_scans: 0, locations: [], announcements: [] };
+        const state = { ducks: [], players: [], scans: [], total_scans: 0, locations: [], announcements: [], hunt_open: true };
         const sort = { ducks: { key: 'duck_id', dir: 1 }, players: { key: 'place', dir: 1 } };
         const selected = new Set();
         let activeTab = 'ducks';
@@ -1160,7 +1175,7 @@
         function subscribe() {
             if (channel) db.removeChannel(channel);
             channel = db.channel('admin-live');
-            ['duck_log', 'players', 'ducks', 'duck_locations', 'announcements'].forEach(table => {
+            ['duck_log', 'players', 'ducks', 'duck_locations', 'announcements', 'game_settings'].forEach(table => {
                 channel.on('postgres_changes', { event: '*', schema: 'public', table }, scheduleLoad);
             });
             channel.subscribe(status => {
@@ -1202,7 +1217,17 @@
             renderSortArrows();
         }
 
+        function renderHuntToggle() {
+            const on = state.hunt_open !== false;
+            const toggle = $('hunt-toggle');
+            toggle.hidden = false;
+            toggle.classList.toggle('on', on);
+            toggle.setAttribute('aria-pressed', on);
+            $('hunt-label').textContent = on ? 'Hunt on' : 'Hunt off';
+        }
+
         function renderSummary() {
+            renderHuntToggle();
             const claimed = state.ducks.filter(d => d.claimed).length;
             const inactive = state.ducks.filter(d => !d.claimed && !d.active).length;
             const points = state.players.reduce((sum, p) => sum + p.points, 0);
@@ -1572,6 +1597,20 @@
                     return busy(el, async () => {
                         await rpc('admin_delete_announcement', { p_id: Number(id) });
                         snackbar('Message deleted.');
+                        await load();
+                    });
+                }
+
+                case 'toggle-hunt': {
+                    const turnOn = state.hunt_open === false;
+                    const ok = await confirmDialog(turnOn ? 'Turn Duck Hunt on?' : 'Turn Duck Hunt off?',
+                        turnOn ? 'Rescuers can claim ducks again right away.'
+                               : 'Rescuers immediately see that the hunt is offline and can\'t claim ducks until you turn it back on. Points and ducks stay as they are.',
+                        turnOn ? 'Turn on' : 'Turn off', !turnOn);
+                    if (!ok) return;
+                    return busy(el, async () => {
+                        await rpc('admin_set_hunt_open', { p_open: turnOn });
+                        snackbar(turnOn ? 'Duck Hunt is on.' : 'Duck Hunt is off.');
                         await load();
                     });
                 }
