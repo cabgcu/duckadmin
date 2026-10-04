@@ -7,232 +7,506 @@
     <title>Duck Hunt Admin</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-
     <style>
         :root {
-            --blue: #1a73e8;
-            --blue-hover: #1765cc;
-            --blue-soft: #e8f0fe;
-            --text: #202124;
-            --muted: #5f6368;
-            --line: #dadce0;
-            --line-soft: #f1f3f4;
-            --red: #d93025;
-            --green: #188038;
-            --green-soft: #e6f4ea;
+            /* Design system (matches CAB Student Market Admin) */
+            --bg-page: #020617;
+            --bg-surface: rgba(8, 13, 28, .78);
+            --bg-solid: #0b0f1e;
+            --bg-hover: rgba(255, 255, 255, 0.06);
+            --border-light: rgba(167, 139, 250, .25);
+            --border-medium: rgba(167, 139, 250, .35);
+            --table-border: rgba(167, 139, 250, .15);
+            --text-main: #ffffff;
+            --text-muted: #a1a1aa;
+            --input-bg: rgba(255, 255, 255, 0.05);
+
+            --brand-primary: #7c3aed;
+            --brand-primary-hover: #60a5fa;
+            --brand-primary-light: rgba(124, 58, 237, 0.15);
+
+            --success-text: #34C759;
+            --success-bg: rgba(52, 199, 89, 0.12);
+            --success-border: rgba(52, 199, 89, 0.3);
+            --warning-text: #FF9500;
+            --warning-bg: rgba(255, 149, 0, 0.12);
+            --warning-border: rgba(255, 149, 0, 0.3);
+            --danger-text: #FF3B30;
+            --danger-bg: rgba(255, 59, 48, 0.12);
+            --danger-border: rgba(255, 59, 48, 0.3);
+
+            --gradient-accent: linear-gradient(135deg, #7c3aed, #4f46e5, #1d4ed8);
+            --gradient-danger: linear-gradient(135deg, #FF3B30, #FF9500);
+
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 40px rgba(79, 70, 229, 0.15);
+            --shadow-card: 0 25px 60px rgba(0, 0, 0, 0.45), 0 0 40px rgba(79, 70, 229, 0.15);
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --radius-xl: 16px;
+            --radius-button: 10px;
+            --blur: 40px;
+            --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
 
-        * { box-sizing: border-box; }
+        html { background-color: #050505; color-scheme: dark; }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
         body {
             margin: 0;
-            font-family: 'Roboto', Arial, sans-serif;
+            font-family: var(--font-stack);
             font-size: 14px;
-            color: var(--text);
-            background: #fff;
+            color: var(--text-main);
+            background-color: transparent;
+            min-height: 100vh;
+            padding: 2rem;
+            padding-bottom: 40px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
         }
+
+        #bg-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -2;
+            background-color: var(--bg-page);
+            background-image: url('https://i.imgur.com/4DfFmUh.png');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
 
         [hidden] { display: none !important; }
 
         button, input, select { font: inherit; color: inherit; }
+        input[type=checkbox] { accent-color: var(--brand-primary); width: 16px; height: 16px; cursor: pointer; }
 
-        /* Buttons */
+        /* ── BUTTONS ── */
         .btn {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 6px;
-            height: 36px;
+            height: 40px;
             padding: 0 16px;
-            border-radius: 4px;
-            border: 1px solid var(--line);
-            background: #fff;
-            color: var(--blue);
-            font-weight: 500;
+            border-radius: var(--radius-button);
+            border: 1px solid var(--border-light);
+            background: #1a1625;
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
             white-space: nowrap;
+            transition: all 0.2s ease;
         }
-        .btn:hover { background: #f8fbff; border-color: #d2e3fc; }
-        .btn:disabled { opacity: 0.5; cursor: default; }
-        .btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-        .btn-primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
-        .btn-danger { color: var(--red); }
-        .btn-danger:hover { background: #fce8e6; border-color: #f6aea9; }
-        .btn-sm { height: 28px; padding: 0 10px; font-size: 13px; }
-        .link { background: none; border: none; color: var(--blue); cursor: pointer; padding: 0 4px; font-weight: 500; }
+        .btn:hover { background: #252036; border-color: var(--border-medium); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-primary {
+            background: var(--gradient-accent);
+            border: none;
+            color: #fff;
+            font-weight: 700;
+            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3);
+        }
+        .btn-primary:hover { background: var(--gradient-accent); transform: translateY(-2px); box-shadow: 0 12px 28px rgba(79, 70, 229, 0.4); }
+        .btn-primary:active { transform: scale(0.96); }
+        .btn-primary.btn-danger-fill { background: var(--gradient-danger); box-shadow: 0 8px 20px rgba(255, 59, 48, 0.3); color: #fff; }
+        .btn-danger { color: var(--danger-text); }
+        .btn-danger:hover { background: var(--danger-bg); border-color: var(--danger-border); }
+        .btn-sm { height: 32px; padding: 0 12px; font-size: 12px; border-radius: var(--radius-md); }
+        .link { background: none; border: none; color: var(--brand-primary-hover); cursor: pointer; padding: 0 4px; font-weight: 600; }
         .link:hover { text-decoration: underline; }
-        .link-danger { color: var(--red); }
 
-        input[type=text], input[type=email], input[type=password], input[type=number], input[type=search] {
-            height: 36px;
-            padding: 0 10px;
-            border: 1px solid var(--line);
-            border-radius: 4px;
-            background: #fff;
-            outline: none;
-        }
-        input:focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
-
-        /* Login */
-        .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
-        .login-card { width: 100%; max-width: 400px; border: 1px solid var(--line); border-radius: 8px; padding: 40px 32px; }
-        .login-card h1 { font-size: 24px; font-weight: 400; margin: 0 0 4px; text-align: center; }
-        .login-card p.sub { color: var(--muted); text-align: center; margin: 0 0 24px; }
-        .login-card input { width: 100%; height: 44px; margin-bottom: 12px; }
-        .error { color: var(--red); font-size: 13px; margin: 4px 0 12px; }
-
-        /* App bar */
-        .appbar {
+        /* Icon action buttons in table rows */
+        .action-wrapper { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: nowrap; }
+        .btn-icon-sq {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-md);
+            cursor: pointer;
             display: flex;
             align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            flex-shrink: 0;
+            padding: 0;
+        }
+        .btn-icon-sq:hover { background-color: var(--border-medium); color: var(--text-main); }
+        .btn-icon-sq.danger:hover { background: var(--danger-bg); color: var(--danger-text); }
+        .btn-icon-sq:disabled { opacity: 0.4; cursor: default; }
+        .btn-icon-sq svg { pointer-events: none; }
+
+        /* ── INPUTS ── */
+        input[type=text], input[type=email], input[type=password], input[type=number], input[type=search] {
+            height: 40px;
+            padding: 0 14px;
+            border: 1px solid var(--border-medium);
+            border-radius: 10px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            outline: none;
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input::placeholder { color: var(--text-muted); }
+        input:focus { border-color: var(--brand-primary-hover); background: rgba(255, 255, 255, 0.08); box-shadow: 0 0 20px rgba(96, 165, 250, .3); }
+        input[readonly] { color: var(--text-muted); background: rgba(255, 255, 255, 0.02); }
+
+        /* ── LOGIN ── */
+        .login-wrap {
+            position: fixed;
+            inset: 0;
+            z-index: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .login-card {
+            width: 90%;
+            max-width: 420px;
+            padding: 42px 40px 45px;
+            border-radius: var(--radius-xl);
+            text-align: center;
+            border: 1px solid var(--border-medium);
+            animation: fadeIn 0.5s ease-out;
+            background: rgba(8, 13, 28, .7);
+            backdrop-filter: blur(25px) saturate(110%);
+            -webkit-backdrop-filter: blur(25px) saturate(110%);
+            box-shadow: 0 50px 100px rgba(0,0,0,.65), 0 0 80px rgba(124,58,237,.25);
+        }
+        .login-card img { height: 60px; margin-bottom: 20px; }
+        .login-card h1 { font-size: 1.5rem; font-weight: 800; margin: 0 0 10px; text-transform: uppercase; }
+        .login-card p.sub { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 30px; }
+        .login-card input { width: 100%; margin-bottom: 1rem; text-align: center; }
+        .error { color: var(--danger-text); font-size: 0.85rem; font-weight: 600; margin: 4px 0 12px; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── APP CONTAINER ── */
+        .app-container {
+            width: 100%;
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .glass {
+            background: var(--bg-surface);
+            backdrop-filter: blur(var(--blur));
+            -webkit-backdrop-filter: blur(var(--blur));
+            border: 1px solid var(--border-light);
+            box-shadow: var(--shadow-card);
+        }
+
+        /* ── TOP HEADER ── */
+        .topbar {
+            position: relative;
+            z-index: 50;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             gap: 16px;
-            height: 64px;
-            padding: 0 24px;
-            border-bottom: 1px solid var(--line);
-            position: sticky;
-            top: 0;
-            background: #fff;
-            z-index: 10;
+            padding: 16px 32px;
+            border-radius: var(--radius-xl);
         }
-        .appbar h1 { font-size: 22px; font-weight: 400; margin: 0; flex: 1; color: var(--muted); }
-        .appbar h1 b { color: var(--text); font-weight: 500; }
-        .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
-        .live i { width: 8px; height: 8px; border-radius: 50%; background: #bdc1c6; }
-        .live.on i { background: var(--green); }
-        .who { color: var(--muted); font-size: 13px; }
-
-        /* Tabs */
-        .tabs { display: flex; gap: 8px; padding: 0 24px; border-bottom: 1px solid var(--line); overflow-x: auto; }
-        .tab {
-            background: none;
-            border: none;
-            border-bottom: 3px solid transparent;
-            padding: 14px 16px 11px;
-            color: var(--muted);
+        .brand { display: flex; align-items: center; gap: 16px; min-width: 0; }
+        .brand-logo { height: 42px; width: auto; display: block; object-fit: contain; }
+        .brand-text h1 { font-size: 18px; font-weight: 700; margin: 0; line-height: 1.2; }
+        .event-subtext {
+            font-size: 13px;
+            color: var(--text-muted);
             font-weight: 500;
-            cursor: pointer;
-            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 2px;
+            flex-wrap: wrap;
         }
-        .tab:hover { color: var(--text); background: var(--line-soft); }
-        .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
-        .tab .count { color: var(--muted); font-weight: 400; margin-left: 4px; }
+        .live { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+        .live i { width: 8px; height: 8px; border-radius: 50%; background: #52525b; }
+        .live.on { color: var(--success-text); }
+        .live.on i { background: var(--success-text); box-shadow: 0 0 8px var(--success-text); }
+        .who { color: var(--text-muted); }
 
-        main { padding: 16px 24px 48px; }
+        /* Nav buttons */
+        .controls { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+        .control-item {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px 16px;
+            border-radius: var(--radius-button);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 13px;
+            letter-spacing: 0.3px;
+        }
+        .control-item:hover { background-color: var(--bg-hover); color: var(--text-main); transform: translateY(-2px); }
+        .control-item.active { background: var(--gradient-accent); color: #ffffff; box-shadow: 0 4px 16px rgba(124, 58, 237, 0.35); }
+        .control-item.logout { color: var(--danger-text); }
+        .control-item.logout:hover { background: var(--danger-bg); }
+        .control-item .count {
+            display: inline-block;
+            min-width: 18px;
+            padding: 1px 6px;
+            margin-left: 6px;
+            border-radius: 9px;
+            background: rgba(255, 255, 255, 0.1);
+            font-size: 0.68rem;
+            font-weight: 800;
+            line-height: 16px;
+            text-align: center;
+        }
+        .control-item .count:empty { display: none; }
+        .control-item.active .count { background: rgba(255, 255, 255, 0.22); }
 
-        .summary { color: var(--muted); margin: 0 0 12px; }
-        .summary b { color: var(--text); font-weight: 500; }
+        /* ── STATS ── */
+        .stats-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .stat-card {
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .stat-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-label svg { width: 16px; height: 16px; flex-shrink: 0; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        .stat-val { font-size: 36px; font-weight: 800; line-height: 1; }
+        .stat-sub { display: flex; gap: 12px; font-size: 13px; font-weight: 500; flex-wrap: wrap; }
 
-        .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
-        .toolbar input[type=search] { width: 280px; max-width: 100%; }
-        .toolbar .spacer { flex: 1; }
+        /* ── TABLE SECTION ── */
+        .table-container { border-radius: var(--radius-xl); overflow: hidden; }
+        .filter-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-light);
+            background-color: rgba(0, 0, 0, 0.4);
+            flex-wrap: wrap;
+        }
+        .filter-row .spacer { flex: 1; }
+        .search-wrapper { position: relative; flex: 0 1 360px; min-width: 200px; }
+        .search-wrapper svg {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            width: 16px; height: 16px;
+            stroke: currentColor; stroke-width: 2; fill: none;
+            stroke-linecap: round; stroke-linejoin: round;
+            pointer-events: none;
+        }
+        .search-wrapper input { width: 100%; padding-left: 40px; }
 
         .selection-bar {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             gap: 8px;
-            padding: 8px 12px;
-            margin-bottom: 12px;
-            background: var(--blue-soft);
-            border-radius: 4px;
+            padding: 12px 24px;
+            background: var(--brand-primary-light);
+            border-bottom: 1px solid var(--border-light);
         }
-        .selection-bar input[type=number] { width: 90px; height: 30px; }
+        .selection-bar label { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-weight: 600; font-size: 13px; }
+        .selection-bar input[type=number] { width: 90px; height: 32px; }
 
-        /* Tables */
-        .table-wrap { border: 1px solid var(--line); border-radius: 4px; overflow: auto; max-height: calc(100vh - 260px); }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { padding: 0 12px; height: 40px; text-align: left; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+        .table-wrap { overflow: auto; max-height: calc(100vh - 360px); min-height: 200px; }
+        table { border-collapse: collapse; width: 100%; min-width: 900px; }
+        th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--table-border); white-space: nowrap; vertical-align: middle; }
         th {
             position: sticky;
             top: 0;
-            background: #f8f9fa;
-            color: var(--muted);
-            font-weight: 500;
-            font-size: 13px;
-            border-bottom: 1px solid var(--line);
+            background: var(--bg-solid);
+            color: var(--text-muted);
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-light);
             z-index: 1;
             user-select: none;
         }
         th.sortable { cursor: pointer; }
-        th.sortable:hover { color: var(--text); }
-        th .arrow { font-size: 11px; margin-left: 2px; }
-        tbody tr:hover { background: #f8f9fa; }
-        tbody tr.selected { background: var(--blue-soft); }
-        tbody tr.fresh { animation: fresh 2.5s ease-out; }
-        @keyframes fresh { from { background: #fef7e0; } to { background: transparent; } }
+        th.sortable:hover { color: var(--text-main); }
+        th .arrow { font-size: 10px; margin-left: 4px; color: var(--brand-primary-hover); }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr { transition: background-color 0.2s; }
+        tbody tr:hover td { background-color: var(--bg-hover); }
+        tbody tr.selected td { background: var(--brand-primary-light); }
+        tbody tr.fresh td { animation: fresh 2.5s ease-out; }
+        @keyframes fresh { from { background: rgba(124, 58, 237, 0.35); } to { background: transparent; } }
         td.num, th.num { text-align: right; }
-        td.mono { font-family: 'Roboto Mono', Consolas, monospace; font-size: 13px; }
-        td.muted { color: var(--muted); }
+        td.mono { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 13px; color: var(--text-muted); }
+        td.muted, .muted { color: var(--text-muted); }
         td.actions { text-align: right; }
-        td.check, th.check { width: 40px; padding-right: 0; }
-        td.empty { text-align: center; color: var(--muted); height: 80px; }
+        td.check, th.check { width: 48px; padding-right: 0; }
+        td.empty { text-align: center; color: var(--text-muted); height: 120px; white-space: normal; }
+        .rank { font-weight: 800; color: #a78bfa; }
+        .footnote { color: var(--text-muted); font-size: 12px; margin: 0; padding: 12px 24px; border-top: 1px solid var(--border-light); background: rgba(0, 0, 0, 0.25); }
 
         input.cell-num {
             width: 80px;
-            height: 30px;
+            height: 32px;
+            padding: 0 10px;
             text-align: right;
             border-color: transparent;
             background: transparent;
+            font-weight: 700;
         }
-        input.cell-num:hover { border-color: var(--line); }
-        input.cell-num:focus { background: #fff; }
+        input.cell-num:hover { border-color: var(--border-medium); }
+        input.cell-num:focus { background: rgba(255, 255, 255, 0.08); }
 
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
-        .badge-open { background: var(--line-soft); color: var(--muted); }
-        .badge-claimed { background: var(--green-soft); color: var(--green); }
+        .status-pill { font-size: 11px; font-weight: 800; padding: 5px 10px; border-radius: var(--radius-button); text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
+        .status-pill.claimed { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+        .status-pill.open { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-border); }
+        .group-tag { font-size: 11px; font-weight: 700; color: #a78bfa; display: inline-block; text-transform: uppercase; background: rgba(124, 58, 237, 0.12); padding: 4px 10px; border-radius: var(--radius-button); border: 1px solid rgba(124, 58, 237, 0.3); }
+        .group-tag:empty { display: none; }
 
-        /* Dialogs */
+        /* ── DIALOGS (modals) ── */
         dialog {
-            border: none;
-            border-radius: 8px;
-            padding: 24px;
-            width: min(480px, calc(100vw - 32px));
-            box-shadow: 0 1px 3px rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
+            border: 1px solid var(--border-medium);
+            border-radius: var(--radius-xl);
+            padding: 36px;
+            width: min(520px, calc(100vw - 32px));
+            max-height: 90vh;
+            color: var(--text-main);
+            background: rgba(8, 13, 28, .92);
+            backdrop-filter: blur(var(--blur)) saturate(110%);
+            -webkit-backdrop-filter: blur(var(--blur)) saturate(110%);
+            box-shadow: var(--shadow-card);
         }
-        dialog::backdrop { background: rgba(32, 33, 36, 0.6); }
-        dialog h2 { font-size: 20px; font-weight: 400; margin: 0 0 16px; }
-        dialog p { color: var(--muted); margin: 0 0 16px; line-height: 1.5; }
-        .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
-        .field label { font-size: 12px; color: var(--muted); font-weight: 500; }
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(15px) saturate(60%);
+            -webkit-backdrop-filter: blur(15px) saturate(60%);
+        }
+        dialog h2 { font-size: 1.25rem; font-weight: 800; margin: 0 0 20px; text-transform: uppercase; letter-spacing: 0.02em; }
+        dialog p { color: var(--text-muted); margin: 0 0 16px; line-height: 1.5; }
+        .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+        .field label { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .field input { width: 100%; }
-        .field .hint { font-size: 12px; color: var(--muted); }
+        .field .hint { font-size: 12px; color: var(--warning-text); }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-        .qr-box { width: 240px; margin: 0 auto 12px; }
-        .qr-box canvas, .qr-box img { width: 100%; height: auto; image-rendering: pixelated; }
-        .preview { background: #f8f9fa; border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; color: var(--muted); font-size: 13px; }
+        .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+        .qr-box { width: 240px; margin: 0 auto 12px; padding: 12px; background: #fff; border-radius: var(--radius-lg); }
+        .qr-box canvas, .qr-box img { width: 100%; height: auto; image-rendering: pixelated; display: block; }
+        .preview { background: var(--bg-hover); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 12px 16px; color: var(--text-muted); font-size: 13px; }
 
-        /* Snackbar */
+        /* ── TOAST ── */
         .snackbar {
+            visibility: hidden;
+            min-width: 300px;
+            max-width: 90vw;
+            background-color: var(--bg-surface);
+            backdrop-filter: blur(var(--blur));
+            -webkit-backdrop-filter: blur(var(--blur));
+            color: var(--text-main);
+            text-align: center;
+            border-radius: var(--radius-xl);
+            padding: 25px;
             position: fixed;
+            z-index: 20001;
             left: 50%;
-            bottom: 24px;
-            transform: translateX(-50%) translateY(20px);
-            background: #323232;
-            color: #fff;
-            padding: 14px 24px;
-            border-radius: 4px;
+            top: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            font-size: 1.1rem;
+            font-weight: 800;
+            border: 1px solid var(--success-border);
+            box-shadow: var(--shadow-md);
             opacity: 0;
+            transition: all 0.2s;
             pointer-events: none;
-            transition: all 0.2s ease;
-            z-index: 100;
-            max-width: calc(100vw - 32px);
         }
-        .snackbar.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .snackbar.show { visibility: visible; opacity: 1; transform: translate(-50%, -50%) scale(1); }
 
-        @media (max-width: 640px) {
-            .appbar { padding: 0 16px; }
-            .appbar h1 { font-size: 18px; }
+        /* ── MOBILE BOTTOM NAV ── */
+        .mobile-bottom-nav {
+            display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+            background: var(--bg-surface);
+            backdrop-filter: blur(var(--blur));
+            -webkit-backdrop-filter: blur(var(--blur));
+            border-top: 1px solid var(--border-light);
+            padding: 4px 0 calc(4px + env(safe-area-inset-bottom));
+            justify-content: space-around; align-items: stretch;
+        }
+        .mob-nav-btn {
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+            background: none; border: none; color: var(--text-muted); font-size: 0.65rem;
+            font-weight: 500; cursor: pointer; padding: 8px 0 4px; font-family: inherit;
+            transition: color 0.15s ease; flex: 1; min-width: 0;
+        }
+        .mob-nav-btn.active { color: var(--brand-primary-hover); }
+        .mob-nav-btn:active { opacity: 0.6; }
+        .mob-nav-btn svg { stroke: currentColor; width: 24px; height: 24px; fill: none; pointer-events: none; }
+        .mob-nav-btn span { pointer-events: none; }
+        .mob-nav-btn.active svg { fill: currentColor; fill-opacity: 0.1; stroke-width: 2.2; }
+
+        /* ── TABLET ── */
+        @media (max-width: 900px) {
+            .topbar { flex-direction: column; gap: 12px; text-align: center; padding: 14px 16px; }
+            .brand { flex-direction: column; gap: 8px; }
+            .event-subtext { justify-content: center; }
+            .controls { justify-content: center; width: 100%; gap: 6px; }
+            .control-item { font-size: 12px; padding: 8px 12px; flex: 1 1 auto; justify-content: center; }
+            .stats-container { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .stat-card { padding: 16px; }
+            .stat-val { font-size: 1.8rem; }
+            .search-wrapper { flex: 1 1 100%; }
+        }
+
+        /* ── MOBILE ── */
+        @media (max-width: 768px) {
+            body { padding: 12px; padding-top: calc(12px + env(safe-area-inset-top)); padding-bottom: 76px; }
+            .app-container { gap: 12px; }
+            .mobile-bottom-nav { display: flex; }
+            .topbar .controls { display: none; }
             .who { display: none; }
-            .tabs { padding: 0 8px; }
-            main { padding: 12px 16px 48px; }
+            .stat-card { text-align: center; padding: 16px 8px; }
+            .stat-label { display: block; font-size: 0.6rem; letter-spacing: 0.8px; }
+            .stat-label svg { display: none; }
+            .stat-sub { justify-content: center; font-size: 0.7rem; }
+            .filter-row { padding: 12px; }
+            .filter-row .btn { flex: 1 1 auto; }
+            .filter-row .spacer { display: none; }
+            .selection-bar { padding: 12px; }
             .table-wrap { max-height: none; }
+            dialog { padding: 24px; }
+            .row { grid-template-columns: 1fr; gap: 0; }
         }
 
         /* Printable QR labels */
         #print-area { display: none; }
         @media print {
             @page { margin: 12mm; }
+            html, body { background: #fff !important; color: #000; padding: 0; }
             body > *:not(#print-area) { display: none !important; }
             #print-area { display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 8mm; }
             .label { break-inside: avoid; border: 1px dashed #999; border-radius: 3mm; padding: 4mm; text-align: center; }
@@ -245,131 +519,189 @@
 </head>
 <body>
 
+    <div id="bg-container"></div>
+
     <!-- Login -->
     <div id="login-view" class="login-wrap" hidden>
         <form id="login-form" class="login-card">
+            <img src="https://i.imgur.com/p2qZOL5.png" alt="CAB">
             <h1>Duck Hunt Admin</h1>
-            <p class="sub">Sign in to continue</p>
+            <p class="sub">Sign in with your admin account.</p>
+            <p id="login-error" class="error" hidden></p>
             <input id="login-email" type="email" autocomplete="username" placeholder="Email" required>
             <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required>
-            <p id="login-error" class="error" hidden></p>
-            <button id="login-btn" type="submit" class="btn btn-primary" style="width:100%;justify-content:center;height:40px">Sign in</button>
+            <button id="login-btn" type="submit" class="btn btn-primary" style="width:100%;height:auto;padding:15px;font-size:1rem">LOG IN</button>
         </form>
     </div>
 
     <!-- App -->
-    <div id="app-view" hidden>
-        <header class="appbar">
-            <h1><b>Duck Hunt</b> Admin</h1>
-            <span id="live" class="live"><i></i><span id="live-label">Connecting</span></span>
-            <span id="who" class="who"></span>
-            <button type="button" class="btn btn-sm" data-action="sign-out">Sign out</button>
+    <div id="app-view" class="app-container" hidden>
+        <header class="topbar glass">
+            <div class="brand">
+                <img src="https://i.imgur.com/p2qZOL5.png" alt="CAB" class="brand-logo">
+                <div class="brand-text">
+                    <h1>Duck Hunt Admin</h1>
+                    <div class="event-subtext">
+                        <span id="live" class="live"><i></i><span id="live-label">Connecting</span></span>
+                        <span id="who" class="who"></span>
+                    </div>
+                </div>
+            </div>
+            <nav class="controls">
+                <button type="button" class="control-item active" data-action="tab" data-tab="ducks">Ducks<span id="count-ducks" class="count"></span></button>
+                <button type="button" class="control-item" data-action="tab" data-tab="rescuers">Rescuers<span id="count-rescuers" class="count"></span></button>
+                <button type="button" class="control-item" data-action="tab" data-tab="scans">Scans<span id="count-scans" class="count"></span></button>
+                <button type="button" class="control-item logout" data-action="sign-out">Logout</button>
+            </nav>
         </header>
 
-        <nav class="tabs">
-            <button type="button" class="tab active" data-action="tab" data-tab="ducks">Ducks<span id="count-ducks" class="count"></span></button>
-            <button type="button" class="tab" data-action="tab" data-tab="rescuers">Rescuers<span id="count-rescuers" class="count"></span></button>
-            <button type="button" class="tab" data-action="tab" data-tab="scans">Scans<span id="count-scans" class="count"></span></button>
-        </nav>
+        <!-- Stats -->
+        <div class="stats-container">
+            <div class="stat-card glass">
+                <span class="stat-label">Ducks Claimed <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
+                <span class="stat-val" style="color:var(--success-text)" id="stat-claimed">0</span>
+                <div class="stat-sub">
+                    <span style="color:var(--success-text)"><span id="stat-claimed-sub">0</span> Claimed</span>
+                    <span style="color:var(--warning-text)"><span id="stat-open">0</span> Open</span>
+                </div>
+            </div>
+            <div class="stat-card glass">
+                <span class="stat-label">Rescuers <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span>
+                <span class="stat-val" id="stat-rescuers">0</span>
+            </div>
+            <div class="stat-card glass">
+                <span class="stat-label">Scans <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><line x1="7" y1="12" x2="17" y2="12"></line></svg></span>
+                <span class="stat-val" id="stat-scans">0</span>
+            </div>
+            <div class="stat-card glass">
+                <span class="stat-label">Points Awarded <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
+                <span class="stat-val" style="color:#a78bfa" id="stat-points">0</span>
+            </div>
+        </div>
 
-        <main>
-            <p id="summary" class="summary"></p>
+        <!-- Ducks -->
+        <section id="panel-ducks" class="table-container glass">
+            <div class="filter-row">
+                <div class="search-wrapper">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input id="duck-search" type="search" placeholder="Search ducks, QR codes, or rescuers...">
+                </div>
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-action="download-ducks">Download CSV</button>
+                <button type="button" class="btn" data-action="print-all">Print QR codes</button>
+                <button type="button" class="btn" data-action="bulk-create">Bulk create</button>
+                <button type="button" class="btn btn-primary" data-action="add-duck">+ Add duck</button>
+            </div>
+            <div id="duck-selection" class="selection-bar" hidden>
+                <b id="duck-selected-count"></b>
+                <span style="flex:1"></span>
+                <label>Set points to <input id="bulk-points" type="number" min="0" value="10"></label>
+                <button type="button" class="btn btn-sm" data-action="bulk-points">Apply</button>
+                <button type="button" class="btn btn-sm" data-action="print-selected">Print QR codes</button>
+                <button type="button" class="btn btn-sm" data-action="download-selected">Download CSV</button>
+                <button type="button" class="btn btn-sm btn-danger" data-action="bulk-delete">Delete</button>
+                <button type="button" class="link" data-action="clear-selection">Clear</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="check"><input id="select-all" type="checkbox" aria-label="Select all"></th>
+                            <th class="sortable" data-sort="ducks" data-key="duck_id">Duck ID</th>
+                            <th class="sortable" data-sort="ducks" data-key="duck_type">Type</th>
+                            <th class="sortable num" data-sort="ducks" data-key="points">Points</th>
+                            <th class="sortable" data-sort="ducks" data-key="location">Location</th>
+                            <th class="sortable" data-sort="ducks" data-key="qr_code">QR code</th>
+                            <th class="sortable" data-sort="ducks" data-key="claimed">Status</th>
+                            <th class="sortable" data-sort="ducks" data-key="claimed_by_name">Found by</th>
+                            <th class="sortable" data-sort="ducks" data-key="claimed_at">Found at</th>
+                            <th class="num">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="duck-rows"></tbody>
+                </table>
+            </div>
+        </section>
 
-            <!-- Ducks -->
-            <section id="panel-ducks">
-                <div class="toolbar">
-                    <input id="duck-search" type="search" placeholder="Search ducks">
-                    <span class="spacer"></span>
-                    <button type="button" class="btn" data-action="download-ducks">Download CSV</button>
-                    <button type="button" class="btn" data-action="print-all">Print QR codes</button>
-                    <button type="button" class="btn" data-action="bulk-create">Bulk create</button>
-                    <button type="button" class="btn btn-primary" data-action="add-duck">Add duck</button>
+        <!-- Rescuers -->
+        <section id="panel-rescuers" class="table-container glass" hidden>
+            <div class="filter-row">
+                <div class="search-wrapper">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input id="rescuer-search" type="search" placeholder="Search name, email, or student ID...">
                 </div>
-                <div id="duck-selection" class="selection-bar" hidden>
-                    <b id="duck-selected-count"></b>
-                    <span class="spacer" style="flex:1"></span>
-                    <label>Set points to <input id="bulk-points" type="number" min="0" value="10"></label>
-                    <button type="button" class="btn btn-sm" data-action="bulk-points">Apply</button>
-                    <button type="button" class="btn btn-sm" data-action="print-selected">Print QR codes</button>
-                    <button type="button" class="btn btn-sm" data-action="download-selected">Download CSV</button>
-                    <button type="button" class="btn btn-sm btn-danger" data-action="bulk-delete">Delete</button>
-                    <button type="button" class="link" data-action="clear-selection">Clear</button>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th class="check"><input id="select-all" type="checkbox" aria-label="Select all"></th>
-                                <th class="sortable" data-sort="ducks" data-key="duck_id">Duck ID</th>
-                                <th class="sortable" data-sort="ducks" data-key="duck_type">Type</th>
-                                <th class="sortable num" data-sort="ducks" data-key="points">Points</th>
-                                <th class="sortable" data-sort="ducks" data-key="location">Location</th>
-                                <th class="sortable" data-sort="ducks" data-key="qr_code">QR code</th>
-                                <th class="sortable" data-sort="ducks" data-key="claimed">Status</th>
-                                <th class="sortable" data-sort="ducks" data-key="claimed_by_name">Found by</th>
-                                <th class="sortable" data-sort="ducks" data-key="claimed_at">Found at</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="duck-rows"></tbody>
-                    </table>
-                </div>
-            </section>
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-action="download-rescuers">Download CSV</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="sortable num" data-sort="players" data-key="place">Rank</th>
+                            <th class="sortable" data-sort="players" data-key="first_name">First name</th>
+                            <th class="sortable" data-sort="players" data-key="last_name">Last name</th>
+                            <th class="sortable" data-sort="players" data-key="student_id">Student ID</th>
+                            <th class="sortable" data-sort="players" data-key="email">Email</th>
+                            <th class="sortable num" data-sort="players" data-key="points">Points</th>
+                            <th class="sortable num" data-sort="players" data-key="codes_scanned">Ducks</th>
+                            <th class="sortable" data-sort="players" data-key="created_at">Registered</th>
+                            <th class="num">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rescuer-rows"></tbody>
+                </table>
+            </div>
+        </section>
 
-            <!-- Rescuers -->
-            <section id="panel-rescuers" hidden>
-                <div class="toolbar">
-                    <input id="rescuer-search" type="search" placeholder="Search rescuers">
-                    <span class="spacer"></span>
-                    <button type="button" class="btn" data-action="download-rescuers">Download CSV</button>
+        <!-- Scans -->
+        <section id="panel-scans" class="table-container glass" hidden>
+            <div class="filter-row">
+                <div class="search-wrapper">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input id="scan-search" type="search" placeholder="Search rescuer, student ID, or duck...">
                 </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th class="sortable num" data-sort="players" data-key="place">Rank</th>
-                                <th class="sortable" data-sort="players" data-key="first_name">First name</th>
-                                <th class="sortable" data-sort="players" data-key="last_name">Last name</th>
-                                <th class="sortable" data-sort="players" data-key="student_id">Student ID</th>
-                                <th class="sortable" data-sort="players" data-key="email">Email</th>
-                                <th class="sortable num" data-sort="players" data-key="points">Points</th>
-                                <th class="sortable num" data-sort="players" data-key="codes_scanned">Ducks</th>
-                                <th class="sortable" data-sort="players" data-key="created_at">Registered</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="rescuer-rows"></tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Scans -->
-            <section id="panel-scans" hidden>
-                <div class="toolbar">
-                    <input id="scan-search" type="search" placeholder="Search scans">
-                    <span class="spacer"></span>
-                    <button type="button" class="btn" data-action="download-scans">Download CSV</button>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Rescuer</th>
-                                <th>Student ID</th>
-                                <th>Duck ID</th>
-                                <th>Type</th>
-                                <th class="num">Points</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="scan-rows"></tbody>
-                    </table>
-                </div>
-                <p class="summary" style="margin-top:8px">Showing the latest 200 scans. Download CSV for all of them.</p>
-            </section>
-        </main>
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-action="download-scans">Download CSV</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Rescuer</th>
+                            <th>Student ID</th>
+                            <th>Duck ID</th>
+                            <th>Type</th>
+                            <th class="num">Points</th>
+                            <th class="num">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scan-rows"></tbody>
+                </table>
+            </div>
+            <p class="footnote">Showing the latest 200 scans. Download CSV for all of them.</p>
+        </section>
     </div>
+
+    <!-- Mobile bottom nav -->
+    <nav id="mobile-nav" class="mobile-bottom-nav" hidden>
+        <button type="button" class="mob-nav-btn active" data-action="tab" data-tab="ducks">
+            <svg viewBox="0 0 24 24" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+            <span>Ducks</span>
+        </button>
+        <button type="button" class="mob-nav-btn" data-action="tab" data-tab="rescuers">
+            <svg viewBox="0 0 24 24" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Rescuers</span>
+        </button>
+        <button type="button" class="mob-nav-btn" data-action="tab" data-tab="scans">
+            <svg viewBox="0 0 24 24" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span>Scans</span>
+        </button>
+        <button type="button" class="mob-nav-btn" data-action="sign-out">
+            <svg viewBox="0 0 24 24" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            <span>Logout</span>
+        </button>
+    </nav>
 
     <!-- Dialogs -->
     <dialog id="duck-dialog">
@@ -422,7 +754,7 @@
     <dialog id="rescuer-dialog">
         <form id="rescuer-form" method="dialog">
             <h2>Edit rescuer</h2>
-            <div class="field"><label>Student ID</label><input id="f-student-id" type="text" readonly style="background:#f8f9fa"></div>
+            <div class="field"><label>Student ID</label><input id="f-student-id" type="text" readonly></div>
             <div class="row">
                 <div class="field"><label for="f-first">First name</label><input id="f-first" type="text" required></div>
                 <div class="field"><label for="f-last">Last name</label><input id="f-last" type="text"></div>
@@ -440,7 +772,7 @@
     <dialog id="qr-dialog">
         <h2 id="qr-title"></h2>
         <div id="qr-box" class="qr-box"></div>
-        <p id="qr-text" style="text-align:center;font-family:monospace;color:var(--text)"></p>
+        <p id="qr-text" style="text-align:center;font-family:monospace;color:var(--text-main)"></p>
         <div class="dialog-actions">
             <button type="button" class="btn" data-action="close-dialog">Close</button>
             <button type="button" class="btn btn-primary" data-action="download-qr">Download PNG</button>
@@ -551,9 +883,7 @@
             $('confirm-message').textContent = message;
             const yes = $('confirm-yes');
             yes.textContent = okLabel;
-            yes.className = 'btn btn-primary';
-            yes.style.background = danger ? 'var(--red)' : '';
-            yes.style.borderColor = danger ? 'var(--red)' : '';
+            yes.className = 'btn btn-primary' + (danger ? ' btn-danger-fill' : '');
             $('confirm-dialog').showModal();
             return new Promise(resolve => { confirmDialog.resolve = resolve; });
         }
@@ -572,6 +902,7 @@
         // ---------- AUTH ----------
         function showLogin(message) {
             $('app-view').hidden = true;
+            $('mobile-nav').hidden = true;
             $('login-view').hidden = false;
             showError('login-error', message);
         }
@@ -587,6 +918,7 @@
             }
             $('login-view').hidden = true;
             $('app-view').hidden = false;
+            $('mobile-nav').hidden = false;
             $('who').textContent = email || '';
             await load();
             subscribe();
@@ -652,6 +984,15 @@
         }
 
         // ---------- RENDERING ----------
+        const icon = paths => `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+        const ICONS = {
+            qr: icon('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>'),
+            edit: icon('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>'),
+            reopen: icon('<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>'),
+            undo: icon('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>'),
+            trash: icon('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>')
+        };
+
         function editingCell() {
             const el = document.activeElement;
             return el && el.classList && el.classList.contains('cell-num');
@@ -674,10 +1015,12 @@
         function renderSummary() {
             const claimed = state.ducks.filter(d => d.claimed).length;
             const points = state.players.reduce((sum, p) => sum + p.points, 0);
-            $('summary').innerHTML =
-                `<b>${claimed}</b> of <b>${state.ducks.length}</b> ducks claimed · ` +
-                `<b>${state.players.length}</b> rescuers · <b>${state.total_scans}</b> scans · ` +
-                `<b>${points.toLocaleString()}</b> points awarded`;
+            $('stat-claimed').textContent = `${claimed} / ${state.ducks.length}`;
+            $('stat-claimed-sub').textContent = claimed;
+            $('stat-open').textContent = state.ducks.length - claimed;
+            $('stat-rescuers').textContent = state.players.length;
+            $('stat-scans').textContent = state.total_scans;
+            $('stat-points').textContent = points.toLocaleString();
             $('count-ducks').textContent = state.ducks.length;
             $('count-rescuers').textContent = state.players.length;
             $('count-scans').textContent = state.total_scans;
@@ -711,19 +1054,19 @@
                 <tr class="${selected.has(d.duck_id) ? 'selected' : ''}">
                     <td class="check"><input type="checkbox" data-select="${esc(d.duck_id)}" ${selected.has(d.duck_id) ? 'checked' : ''} aria-label="Select ${esc(d.duck_id)}"></td>
                     <td><b>${esc(d.duck_id)}</b></td>
-                    <td>${esc(d.duck_type)}</td>
+                    <td><span class="group-tag">${esc(d.duck_type)}</span></td>
                     <td class="num"><input class="cell-num" type="number" min="0" value="${esc(d.points)}" data-points-duck="${esc(d.duck_id)}" aria-label="Points for ${esc(d.duck_id)}"></td>
                     <td>${esc(d.location)}</td>
                     <td class="mono">${esc(d.qr_code)}</td>
-                    <td><span class="badge ${d.claimed ? 'badge-claimed' : 'badge-open'}">${d.claimed ? 'Claimed' : 'Open'}</span></td>
+                    <td><span class="status-pill ${d.claimed ? 'claimed' : 'open'}">${d.claimed ? 'Claimed' : 'Open'}</span></td>
                     <td>${esc(d.claimed_by_name || d.claimed_by || '')}</td>
                     <td class="muted">${esc(formatDate(d.claimed_at))}</td>
-                    <td class="actions">
-                        <button type="button" class="link" data-action="show-qr" data-id="${esc(d.duck_id)}">QR</button>
-                        <button type="button" class="link" data-action="edit-duck" data-id="${esc(d.duck_id)}">Edit</button>
-                        ${d.claimed ? `<button type="button" class="link" data-action="reopen-duck" data-id="${esc(d.duck_id)}">Re-open</button>` : ''}
-                        <button type="button" class="link link-danger" data-action="delete-duck" data-id="${esc(d.duck_id)}">Delete</button>
-                    </td>
+                    <td class="actions"><div class="action-wrapper">
+                        <button type="button" class="btn-icon-sq" data-action="show-qr" data-id="${esc(d.duck_id)}" title="Show QR code" aria-label="Show QR code">${ICONS.qr}</button>
+                        <button type="button" class="btn-icon-sq" data-action="edit-duck" data-id="${esc(d.duck_id)}" title="Edit duck" aria-label="Edit duck">${ICONS.edit}</button>
+                        ${d.claimed ? `<button type="button" class="btn-icon-sq" data-action="reopen-duck" data-id="${esc(d.duck_id)}" title="Re-open duck" aria-label="Re-open duck">${ICONS.reopen}</button>` : ''}
+                        <button type="button" class="btn-icon-sq danger" data-action="delete-duck" data-id="${esc(d.duck_id)}" title="Delete duck" aria-label="Delete duck">${ICONS.trash}</button>
+                    </div></td>
                 </tr>`).join('') :
                 `<tr><td class="empty" colspan="10">${state.ducks.length ? 'No ducks match your search.' : 'No ducks yet. Use Add duck or Bulk create.'}</td></tr>`;
 
@@ -740,18 +1083,18 @@
                 matches(p, ['first_name', 'last_name', 'student_id', 'email'], term) || fullName(p).toLowerCase().includes(term)), 'players');
             $('rescuer-rows').innerHTML = players.length ? players.map(p => `
                 <tr>
-                    <td class="num">${esc(p.place)}</td>
-                    <td>${esc(p.first_name)}</td>
+                    <td class="num"><span class="rank">#${esc(p.place)}</span></td>
+                    <td><b>${esc(p.first_name)}</b></td>
                     <td>${esc(p.last_name)}</td>
                     <td class="mono">${esc(p.student_id)}</td>
                     <td>${esc(p.email)}</td>
                     <td class="num"><input class="cell-num" type="number" min="0" value="${esc(p.points)}" data-points-player="${esc(p.student_id)}" aria-label="Points for ${esc(fullName(p))}"></td>
                     <td class="num">${esc(p.codes_scanned)}</td>
                     <td class="muted">${esc(formatDate(p.created_at))}</td>
-                    <td class="actions">
-                        <button type="button" class="link" data-action="edit-rescuer" data-id="${esc(p.student_id)}">Edit</button>
-                        <button type="button" class="link link-danger" data-action="delete-rescuer" data-id="${esc(p.student_id)}">Delete</button>
-                    </td>
+                    <td class="actions"><div class="action-wrapper">
+                        <button type="button" class="btn-icon-sq" data-action="edit-rescuer" data-id="${esc(p.student_id)}" title="Edit rescuer" aria-label="Edit rescuer">${ICONS.edit}</button>
+                        <button type="button" class="btn-icon-sq danger" data-action="delete-rescuer" data-id="${esc(p.student_id)}" title="Delete rescuer" aria-label="Delete rescuer">${ICONS.trash}</button>
+                    </div></td>
                 </tr>`).join('') :
                 `<tr><td class="empty" colspan="9">${state.players.length ? 'No rescuers match your search.' : 'No rescuers have registered yet.'}</td></tr>`;
         }
@@ -764,12 +1107,12 @@
             $('scan-rows').innerHTML = scans.length ? scans.map(s => `
                 <tr class="${fresh.has(s.id) ? 'fresh' : ''}">
                     <td class="muted">${esc(formatDate(s.scanned_at))}</td>
-                    <td>${esc(s.player_name)}</td>
+                    <td><b>${esc(s.player_name)}</b></td>
                     <td class="mono">${esc(s.student_id)}</td>
                     <td>${s.duck_id ? esc(s.duck_id) : '<span class="muted">Deleted duck</span>'}</td>
-                    <td>${esc(s.duck_type)}</td>
-                    <td class="num">${esc(s.points)}</td>
-                    <td class="actions"><button type="button" class="link link-danger" data-action="undo-scan" data-id="${esc(s.id)}">Undo</button></td>
+                    <td><span class="group-tag">${esc(s.duck_type)}</span></td>
+                    <td class="num"><b>${esc(s.points)}</b></td>
+                    <td class="actions"><div class="action-wrapper"><button type="button" class="btn-icon-sq danger" data-action="undo-scan" data-id="${esc(s.id)}" title="Undo scan" aria-label="Undo scan">${ICONS.undo}</button></div></td>
                 </tr>`).join('') :
                 `<tr><td class="empty" colspan="7">${state.scans.length ? 'No scans match your search.' : 'No scans yet. They appear here live.'}</td></tr>`;
         }
@@ -784,7 +1127,7 @@
 
         function switchTab(tab) {
             activeTab = tab;
-            document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            document.querySelectorAll('[data-action="tab"]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
             ['ducks', 'rescuers', 'scans'].forEach(t => { $('panel-' + t).hidden = t !== tab; });
         }
 
