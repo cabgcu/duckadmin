@@ -635,7 +635,7 @@
                 <span class="stat-val" style="color:var(--success-text)" id="stat-claimed">0</span>
                 <div class="stat-sub">
                     <span style="color:var(--success-text)"><span id="stat-claimed-sub">0</span> Claimed</span>
-                    <span style="color:var(--warning-text)"><span id="stat-open">0</span> Open</span>
+                    <span style="color:var(--warning-text)"><span id="stat-open">0</span> Active</span>
                     <span style="color:var(--text-muted)"><span id="stat-inactive">0</span> Inactive</span>
                 </div>
             </div>
@@ -1218,7 +1218,7 @@
                     <td class="num"><input class="cell-num" type="number" min="0" value="${esc(d.points)}" data-points-duck="${esc(d.duck_id)}" aria-label="Points for ${esc(d.duck_id)}"></td>
                     <td>${esc(d.location)}</td>
                     <td class="mono">${esc(d.qr_code)}</td>
-                    <td><span class="status-pill ${duckStatus(d)}">${duckStatus(d)}</span></td>
+                    <td><span class="status-pill ${duckStatus(d)}">${duckStatus(d) === 'open' ? 'active' : duckStatus(d)}</span></td>
                     <td>${esc(d.claimed_by_name || d.claimed_by || '')}</td>
                     <td class="muted">${esc(formatDate(d.claimed_at))}</td>
                     <td class="actions"><div class="action-wrapper">
