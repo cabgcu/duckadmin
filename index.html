@@ -975,6 +975,21 @@
         </div>
     </dialog>
 
+    <dialog id="crawl-dialog">
+        <form id="crawl-form" method="dialog">
+            <h2>End Duck Hunt</h2>
+            <p>Every player's app cuts to the galaxy: "A long time ago in a galaxy far, far away…", the Duck Hunt title, then this text scrolls away into space like the Star Wars opening. Claims stop until you turn the hunt back on.</p>
+            <div class="field"><label for="c-title">Crawl title</label><input id="c-title" type="text" maxlength="60" required></div>
+            <div class="field"><label for="c-text">Crawl text</label><textarea id="c-text" maxlength="1200" style="min-height:180px" required></textarea>
+                <span class="hint" style="color:var(--text-muted)">Leave a blank line between paragraphs. Three short paragraphs work best.</span></div>
+            <p id="crawl-error" class="error" hidden></p>
+            <div class="dialog-actions">
+                <button type="button" class="btn" data-action="close-dialog">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-danger-fill">End the hunt</button>
+            </div>
+        </form>
+    </dialog>
+
     <datalist id="location-options"></datalist>
 
     <dialog id="confirm-dialog">
@@ -1617,6 +1632,7 @@
 
                 case 'toggle-hunt': {
                     const turnOn = state.hunt_open === false;
+                    if (!turnOn) return openCrawlDialog();
                     const ok = await confirmDialog(turnOn ? 'Turn Duck Hunt on?' : 'Turn Duck Hunt off?',
                         turnOn ? 'Rescuers can claim ducks again right away.'
                                : 'Rescuers immediately see that the hunt is offline and can\'t claim ducks until you turn it back on. Points and ducks stay as they are.',
@@ -1822,6 +1838,36 @@
         $('duck-search').addEventListener('input', () => { duckPage = 0; renderDucks(); });
         $('rescuer-search').addEventListener('input', renderRescuers);
         $('scan-search').addEventListener('input', renderScans);
+
+        // ---------- END THE HUNT (Star Wars crawl) ----------
+        const DEFAULT_CRAWL_TITLE = 'The Hunt Is Over';
+        const DEFAULT_CRAWL_TEXT = 'The ducks have been rescued and the galaxy is quiet once more.\n\n' +
+            'Brave rescuers searched every corner of campus, scanning codes and climbing the ranks of the Rebellion.\n\n' +
+            'The final standings are locked. Stand by for a transmission from Command announcing the champions....';
+
+        function openCrawlDialog() {
+            $('c-title').value = state.crawl_title || DEFAULT_CRAWL_TITLE;
+            $('c-text').value = state.crawl_text || DEFAULT_CRAWL_TEXT;
+            showError('crawl-error', '');
+            $('crawl-dialog').showModal();
+        }
+
+        $('crawl-form').addEventListener('submit', event => {
+            event.preventDefault();
+            const title = $('c-title').value.trim();
+            const text = $('c-text').value.trim();
+            if (!title || !text) return showError('crawl-error', 'Fill in the title and text.');
+            busy(event.submitter, async () => {
+                try {
+                    await rpc('admin_set_hunt_open', { p_open: false, p_crawl_title: title, p_crawl_text: text });
+                    $('crawl-dialog').close();
+                    snackbar('Duck Hunt is off. Rolling the crawl.');
+                    await load();
+                } catch (err) {
+                    showError('crawl-error', err.message);
+                }
+            });
+        });
 
         // ---------- MESSAGES ----------
         function renderMessages() {
