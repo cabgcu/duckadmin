@@ -458,6 +458,23 @@
         .location-list li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border-light); background: var(--bg-hover); }
         .location-list li b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .location-list li span { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+
+        /* ── MESSAGES ── */
+        textarea {
+            width: 100%; min-height: 140px; padding: 12px 14px; resize: vertical;
+            border: 1px solid var(--border-medium); border-radius: 10px;
+            background: var(--input-bg); color: var(--text-main); outline: none; font: inherit; font-size: 14px; line-height: 1.5;
+        }
+        textarea:focus { border-color: var(--brand-primary-hover); background: rgba(255, 255, 255, 0.08); box-shadow: 0 0 20px rgba(96, 165, 250, .3); }
+        .message-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+        .message-list li { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border-light); background: var(--bg-hover); }
+        .message-list li > div { flex: 1; min-width: 0; }
+        .message-list b { display: block; margin-bottom: 4px; }
+        .message-list p { margin: 0; white-space: pre-line; word-break: break-word; color: var(--text-main); line-height: 1.5; font-size: 14px; }
+        .message-list time { display: block; margin-top: 6px; color: var(--text-muted); font-size: 12px; }
+        .message-list .empty { color: var(--text-muted); border: none; background: none; padding: 4px 0; font-size: 13px; }
+        .holo-preview { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 12px; border: 1px solid rgba(143, 227, 255, 0.35); background: rgba(10, 40, 60, 0.35); color: #c9f1ff; font-size: 13px; line-height: 1.5; }
+        .holo-preview img { width: 56px; height: auto; filter: drop-shadow(0 0 10px rgba(80, 200, 255, 0.6)); }
         .group-tag { font-size: 11px; font-weight: 700; color: #a78bfa; display: inline-block; text-transform: uppercase; background: rgba(124, 58, 237, 0.12); padding: 4px 10px; border-radius: var(--radius-button); border: 1px solid rgba(124, 58, 237, 0.3); }
         .group-tag:empty { display: none; }
 
@@ -624,6 +641,7 @@
                 <button type="button" class="control-item" data-action="tab" data-tab="rescuers">Rescuers<span id="count-rescuers" class="count"></span></button>
                 <button type="button" class="control-item" data-action="tab" data-tab="scans">Scans<span id="count-scans" class="count"></span></button>
                 <button type="button" class="control-item" data-action="tab" data-tab="scanner">Scanner</button>
+                <button type="button" class="control-item" data-action="tab" data-tab="messages">Messages<span id="count-messages" class="count"></span></button>
                 <button type="button" class="control-item logout" data-action="sign-out">Logout</button>
             </nav>
         </header>
@@ -768,6 +786,29 @@
             <p class="footnote">Showing the latest 200 scans. Download CSV for all of them.</p>
         </section>
 
+        <!-- Messages: announcements every player sees as a hologram pop-up -->
+        <section id="panel-messages" class="table-container glass" hidden>
+            <div class="scanner-grid">
+                <div class="scanner-col">
+                    <h3>New transmission</h3>
+                    <div class="holo-preview">
+                        <img src="https://i.imgur.com/AWkygpg.png" alt="">
+                        <span>Every player gets this as a full-screen hologram pop-up (within about 30 seconds if the app is open). They can close it and open it again from the antenna button.</span>
+                    </div>
+                    <form id="message-form">
+                        <div class="field"><label for="m-title">Title</label><input id="m-title" type="text" maxlength="80" placeholder="e.g. Golden duck sighted!"></div>
+                        <div class="field"><label for="m-body">Message</label><textarea id="m-body" maxlength="1000" placeholder="What should every rescuer know?" required></textarea></div>
+                        <p id="message-error" class="error" hidden></p>
+                        <button type="submit" class="btn btn-primary" style="width:100%">Send to all players</button>
+                    </form>
+                </div>
+                <div class="scanner-col">
+                    <h3>Sent</h3>
+                    <ul id="message-list" class="message-list"></ul>
+                </div>
+            </div>
+        </section>
+
         <!-- Scanner: activate ducks and tag their locations -->
         <section id="panel-scanner" class="table-container glass" hidden>
             <div class="scanner-grid">
@@ -825,6 +866,10 @@
         <button type="button" class="mob-nav-btn" data-action="tab" data-tab="scanner">
             <svg viewBox="0 0 24 24" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
             <span>Scanner</span>
+        </button>
+        <button type="button" class="mob-nav-btn" data-action="tab" data-tab="messages">
+            <svg viewBox="0 0 24 24" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>Messages</span>
         </button>
         <button type="button" class="mob-nav-btn" data-action="sign-out">
             <svg viewBox="0 0 24 24" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -945,7 +990,7 @@
         }
 
         // ---------- STATE ----------
-        const state = { ducks: [], players: [], scans: [], total_scans: 0, locations: [] };
+        const state = { ducks: [], players: [], scans: [], total_scans: 0, locations: [], announcements: [] };
         const sort = { ducks: { key: 'duck_id', dir: 1 }, players: { key: 'place', dir: 1 } };
         const selected = new Set();
         let activeTab = 'ducks';
@@ -1115,7 +1160,7 @@
         function subscribe() {
             if (channel) db.removeChannel(channel);
             channel = db.channel('admin-live');
-            ['duck_log', 'players', 'ducks', 'duck_locations'].forEach(table => {
+            ['duck_log', 'players', 'ducks', 'duck_locations', 'announcements'].forEach(table => {
                 channel.on('postgres_changes', { event: '*', schema: 'public', table }, scheduleLoad);
             });
             channel.subscribe(status => {
@@ -1153,6 +1198,7 @@
             renderRescuers();
             renderScans();
             renderLocations();
+            renderMessages();
             renderSortArrows();
         }
 
@@ -1302,7 +1348,7 @@
         function switchTab(tab) {
             activeTab = tab;
             document.querySelectorAll('[data-action="tab"]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-            ['ducks', 'rescuers', 'scans', 'scanner'].forEach(t => { $('panel-' + t).hidden = t !== tab; });
+            ['ducks', 'rescuers', 'scans', 'scanner', 'messages'].forEach(t => { $('panel-' + t).hidden = t !== tab; });
             if (tab !== 'scanner') stopAdminScanner();
         }
 
@@ -1520,6 +1566,16 @@
                     });
                 }
 
+                case 'delete-message': {
+                    const ok = await confirmDialog('Delete this message?', 'Players won\'t be able to open it again.', 'Delete', true);
+                    if (!ok) return;
+                    return busy(el, async () => {
+                        await rpc('admin_delete_announcement', { p_id: Number(id) });
+                        snackbar('Message deleted.');
+                        await load();
+                    });
+                }
+
                 case 'scan-mode': return setScanMode(el.dataset.mode);
                 case 'toggle-scanner': return adminScanning ? stopAdminScanner() : startAdminScanner();
 
@@ -1697,6 +1753,41 @@
         $('duck-search').addEventListener('input', () => { duckPage = 0; renderDucks(); });
         $('rescuer-search').addEventListener('input', renderRescuers);
         $('scan-search').addEventListener('input', renderScans);
+
+        // ---------- MESSAGES ----------
+        function renderMessages() {
+            const list = state.announcements || [];
+            $('count-messages').textContent = list.length || '';
+            $('message-list').innerHTML = list.length ? list.map(a => `
+                <li>
+                    <div>
+                        <b>${esc(a.title || 'Message from Command')}</b>
+                        <p>${esc(a.message)}</p>
+                        <time>${esc(formatDate(a.created_at))}</time>
+                    </div>
+                    <button type="button" class="btn-icon-sq danger" data-action="delete-message" data-id="${esc(a.id)}" title="Delete message" aria-label="Delete message">${ICONS.trash}</button>
+                </li>`).join('') :
+                '<li class="empty">No messages sent yet.</li>';
+        }
+
+        $('message-form').addEventListener('submit', event => {
+            event.preventDefault();
+            const title = $('m-title').value.trim();
+            const message = $('m-body').value.trim();
+            if (!message) return showError('message-error', 'Write a message first.');
+            showError('message-error', '');
+            const button = event.submitter;
+            confirmDialog('Send to every player?', 'It pops up on every rescuer\'s screen. You can delete it later, but anyone who already saw it will have seen it.', 'Send').then(ok => {
+                if (!ok) return;
+                busy(button, async () => {
+                    await rpc('admin_post_announcement', { p_title: title, p_message: message });
+                    $('m-title').value = '';
+                    $('m-body').value = '';
+                    snackbar('Transmission sent.');
+                    await load();
+                });
+            });
+        });
 
         // ---------- LOCATIONS ----------
         function renderLocations() {
