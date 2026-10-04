@@ -395,6 +395,13 @@
         .status-pill.frozen { background: rgba(120, 200, 255, 0.14); color: #9fdcff; border: 1px solid rgba(140, 210, 255, 0.45); margin-left: 6px; }
         .holo-count { font-variant-numeric: tabular-nums; }
         .btn.frozen-filter.on { background: rgba(120, 200, 255, 0.18); border-color: rgba(140, 210, 255, 0.6); color: #cfeeff; }
+        .status-pill.honored { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+        .status-pill.denied { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); }
+        .status-pill.review { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-border); }
+        .status-pill.reversed { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid var(--border-light); }
+        .status-pill.broken { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-border); margin-left: 6px; }
+        .report-outcome { display: block; margin-top: 4px; color: var(--text-muted); font-size: 12px; white-space: normal; min-width: 220px; max-width: 360px; }
+        .broken-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 999px; border: 1px solid var(--warning-border); background: var(--warning-bg); color: var(--warning-text); font-weight: 700; font-size: 12px; }
         .status-pill.inactive { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid var(--border-light); }
         .duck-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
         .duck-filters select { height: 40px; font-size: 13px; max-width: 200px; }
@@ -653,6 +660,7 @@
                 <button type="button" class="control-item" data-action="tab" data-tab="scans">Scans<span id="count-scans" class="count"></span></button>
                 <button type="button" class="control-item" data-action="tab" data-tab="scanner">Scanner</button>
                 <button type="button" class="control-item" data-action="tab" data-tab="messages">Messages<span id="count-messages" class="count"></span></button>
+                <button type="button" class="control-item" data-action="tab" data-tab="reports">Reports<span id="count-reports" class="count"></span></button>
                 <button type="button" class="control-item logout" data-action="sign-out">Logout</button>
             </nav>
         </header>
@@ -696,6 +704,7 @@
                         <option value="open">Active</option>
                         <option value="inactive">Inactive</option>
                         <option value="claimed">Claimed</option>
+                        <option value="broken">Reported broken</option>
                     </select>
                     <select id="duck-filter-location" class="duck-filter" aria-label="Filter by location"></select>
                     <select id="duck-sort" aria-label="Sort ducks">
@@ -820,6 +829,47 @@
             <p class="footnote">Showing the latest 200 scans. Download CSV for all of them.</p>
         </section>
 
+        <!-- Reports: broken codes players reported (resolved automatically) -->
+        <section id="panel-reports" class="table-container glass" hidden>
+            <div class="filter-row">
+                <div class="search-wrapper">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input id="report-search" type="search" placeholder="Search rescuer, student ID, duck or location...">
+                </div>
+                <div class="duck-filters">
+                    <select id="report-filter" aria-label="Filter by result">
+                        <option value="">All results</option>
+                        <option value="honored">Honored</option>
+                        <option value="denied">Not honored</option>
+                        <option value="reversed">Undone</option>
+                    </select>
+                </div>
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-action="download-reports">Download CSV</button>
+            </div>
+            <div id="broken-ducks" class="selection-bar" hidden></div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Rescuer</th>
+                            <th>Student ID</th>
+                            <th>Kind</th>
+                            <th>Location</th>
+                            <th>ID / code typed</th>
+                            <th>Issue</th>
+                            <th>Result</th>
+                            <th class="num">Points</th>
+                            <th class="num">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="report-rows"></tbody>
+                </table>
+            </div>
+            <p class="footnote">Reports are resolved automatically: a rescuer who names the duck (ID or code) gets that duck and it's flagged for reprinting; otherwise they get the standard points for that kind of duck and no other duck is used up. Each rescuer can have 5 Rebel duck and 10 hologram code reports honored. Undo takes the points back (and re-opens a named duck).</p>
+        </section>
+
         <!-- Messages: announcements every player sees as a hologram pop-up -->
         <section id="panel-messages" class="table-container glass" hidden>
             <div class="scanner-grid">
@@ -900,6 +950,10 @@
         <button type="button" class="mob-nav-btn" data-action="tab" data-tab="scanner">
             <svg viewBox="0 0 24 24" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
             <span>Scanner</span>
+        </button>
+        <button type="button" class="mob-nav-btn" data-action="tab" data-tab="reports">
+            <svg viewBox="0 0 24 24" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            <span>Reports</span>
         </button>
         <button type="button" class="mob-nav-btn" data-action="tab" data-tab="messages">
             <svg viewBox="0 0 24 24" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -1038,7 +1092,7 @@
         }
 
         // ---------- STATE ----------
-        const state = { ducks: [], players: [], scans: [], total_scans: 0, locations: [], announcements: [], hunt_open: true };
+        const state = { ducks: [], players: [], scans: [], total_scans: 0, locations: [], announcements: [], hunt_open: true, reports: [] };
         const sort = { ducks: { key: 'duck_id', dir: 1 }, players: { key: 'place', dir: 1 } };
         const selected = new Set();
         let activeTab = 'ducks';
@@ -1209,7 +1263,7 @@
         function subscribe() {
             if (channel) db.removeChannel(channel);
             channel = db.channel('admin-live');
-            ['duck_log', 'players', 'ducks', 'duck_locations', 'announcements', 'game_settings'].forEach(table => {
+            ['duck_log', 'players', 'ducks', 'duck_locations', 'announcements', 'game_settings', 'code_reports'].forEach(table => {
                 channel.on('postgres_changes', { event: '*', schema: 'public', table }, scheduleLoad);
             });
             channel.subscribe(status => {
@@ -1248,6 +1302,7 @@
             renderScans();
             renderLocations();
             renderMessages();
+            renderReports();
             renderSortArrows();
         }
 
@@ -1302,7 +1357,7 @@
             const location = $('duck-filter-location').value;
             return sorted(state.ducks.filter(d =>
                 (!type || (type === NONE ? !d.duck_type : d.duck_type === type)) &&
-                (!status || duckStatus(d) === status) &&
+                (!status || (status === 'broken' ? d.broken_reports > 0 : duckStatus(d) === status)) &&
                 (!location || (location === NONE ? !d.location : d.location === location)) &&
                 matches(d, ['duck_id', 'duck_type', 'location', 'qr_code', 'claimed_by_name', 'claimed_by'], term)), 'ducks');
         }
@@ -1359,7 +1414,7 @@
                     <td class="num"><input class="cell-num" type="number" min="0" value="${esc(d.points)}" data-points-duck="${esc(d.duck_id)}" aria-label="Points for ${esc(d.duck_id)}"></td>
                     <td>${esc(d.location)}</td>
                     <td class="mono">${esc(d.qr_code)}</td>
-                    <td><span class="status-pill ${duckStatus(d)}">${duckStatus(d) === 'open' ? 'active' : duckStatus(d)}</span></td>
+                    <td><span class="status-pill ${duckStatus(d)}">${duckStatus(d) === 'open' ? 'active' : duckStatus(d)}</span>${d.broken_reports ? `<span class="status-pill broken" title="Reported broken ${d.broken_reports}×: check or reprint its label">⚠ ${d.broken_reports}</span>` : ''}</td>
                     <td>${esc(d.claimed_by_name || d.claimed_by || '')}</td>
                     <td class="muted">${esc(formatDate(d.claimed_at))}</td>
                     <td class="actions"><div class="action-wrapper">
@@ -1432,7 +1487,7 @@
                     <td class="muted">${esc(formatDate(s.scanned_at))}</td>
                     <td><b>${esc(s.player_name)}</b></td>
                     <td class="mono">${esc(s.student_id)}</td>
-                    <td>${s.duck_id ? esc(s.duck_id) : '<span class="muted">Deleted duck</span>'}</td>
+                    <td>${s.duck_id ? esc(s.duck_id) : s.source === 'report' ? '<span class="muted">Reported (points only)</span>' : '<span class="muted">Deleted duck</span>'}</td>
                     <td><span class="group-tag">${esc(s.duck_type)}</span></td>
                     <td class="num"><b>${esc(s.points)}</b></td>
                     <td class="actions"><div class="action-wrapper"><button type="button" class="btn-icon-sq danger" data-action="undo-scan" data-id="${esc(s.id)}" title="Undo scan" aria-label="Undo scan">${ICONS.undo}</button></div></td>
@@ -1451,7 +1506,7 @@
         function switchTab(tab) {
             activeTab = tab;
             document.querySelectorAll('[data-action="tab"]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-            ['ducks', 'rescuers', 'scans', 'scanner', 'messages'].forEach(t => { $('panel-' + t).hidden = t !== tab; });
+            ['ducks', 'rescuers', 'scans', 'scanner', 'messages', 'reports'].forEach(t => { $('panel-' + t).hidden = t !== tab; });
             if (tab !== 'scanner') stopAdminScanner();
         }
 
@@ -1859,6 +1914,34 @@ ${sheets.join('\n')}
                     });
                 }
 
+                case 'reverse-report': {
+                    const r = (state.reports || []).find(x => String(x.id) === id);
+                    if (!r) return;
+                    const ok = await confirmDialog('Undo this report?',
+                        `${r.player_name || r.student_id} loses ${r.points} points${r.duck_id ? ` and ${r.duck_id} can be found again` : ''}. The report no longer counts toward their limit.`, 'Undo', true);
+                    if (!ok) return;
+                    return busy(el, async () => {
+                        await rpc('admin_reverse_report', { p_id: Number(id) });
+                        snackbar('Report undone.');
+                        await load();
+                    });
+                }
+                case 'clear-broken':
+                    return busy(el, async () => {
+                        await rpc('admin_clear_duck_reports', { p_duck_id: id });
+                        snackbar(`${id} marked fixed.`);
+                        await load();
+                    });
+                case 'print-one': {
+                    const duck = findDuck(id);
+                    return duck && printLabels([duck]);
+                }
+                case 'download-reports':
+                    return downloadCSV(`duck-hunt-reports-${today()}.csv`,
+                        ['Time', 'Rescuer', 'Student ID', 'Kind', 'Location', 'ID / code typed', 'Issue', 'Note', 'Result', 'Outcome', 'Duck awarded', 'Points'],
+                        (state.reports || []).map(r => [r.created_at, r.player_name, r.student_id, r.kind, r.location, r.code_ref, r.issue, r.note,
+                            REPORT_LABELS[r.status] || r.status, r.outcome, r.status === 'honored' || r.status === 'reversed' ? r.duck_id : '', r.points]));
+
                 case 'scan-mode': return setScanMode(el.dataset.mode);
                 case 'toggle-scanner': return adminScanning ? stopAdminScanner() : startAdminScanner();
 
@@ -2075,6 +2158,49 @@ ${sheets.join('\n')}
                 }
             });
         });
+
+        // ---------- REPORTS ----------
+        const REPORT_LABELS = { honored: 'Honored', denied: 'Not honored', review: 'Needs a look', reversed: 'Undone' }; // 'review' is from older reports
+
+        function renderReports() {
+            const reports = state.reports || [];
+            const review = reports.filter(r => r.status === 'review').length;
+            $('count-reports').textContent = reports.length || '';
+            $('count-reports').title = review ? `${review} need a look` : '';
+
+            // Ducks whose labels were reported broken
+            const broken = state.ducks.filter(d => d.broken_reports > 0);
+            $('broken-ducks').hidden = !broken.length;
+            $('broken-ducks').innerHTML = broken.length ? `<b>⚠ Labels reported broken:</b>` + broken.map(d => `
+                <span class="broken-chip">${esc(d.duck_id)}${d.location ? ' · ' + esc(d.location) : ''} (${d.broken_reports})
+                    <button type="button" class="btn btn-sm" data-action="print-one" data-id="${esc(d.duck_id)}">Print label</button>
+                    <button type="button" class="btn btn-sm" data-action="clear-broken" data-id="${esc(d.duck_id)}">Mark fixed</button>
+                </span>`).join('') : '';
+
+            const term = $('report-search').value.trim().toLowerCase();
+            const status = $('report-filter').value;
+            const rows = reports.filter(r => (!status || r.status === status) &&
+                matches(r, ['player_name', 'student_id', 'duck_id', 'location', 'code_ref', 'issue', 'note', 'outcome'], term));
+            $('report-rows').innerHTML = rows.length ? rows.map(r => `
+                <tr>
+                    <td class="muted">${esc(formatDate(r.created_at))}</td>
+                    <td><b>${esc(r.player_name || '')}</b></td>
+                    <td class="mono">${esc(r.student_id)}</td>
+                    <td>${r.kind === 'hologram' ? 'Hologram' : 'Rebel duck'}</td>
+                    <td>${esc(r.location || '')}</td>
+                    <td class="mono">${esc(r.code_ref || '')}</td>
+                    <td>${esc(r.issue)}${r.note ? `<span class="report-outcome">“${esc(r.note)}”</span>` : ''}</td>
+                    <td><span class="status-pill ${esc(r.status)}">${REPORT_LABELS[r.status] || esc(r.status)}</span><span class="report-outcome">${esc(r.outcome)}</span></td>
+                    <td class="num">${r.points ? '+' + esc(r.points) : ''}</td>
+                    <td class="actions"><div class="action-wrapper">
+                        ${r.status === 'honored' ? `<button type="button" class="btn-icon-sq danger" data-action="reverse-report" data-id="${esc(r.id)}" title="Undo: take the points back and re-open the duck" aria-label="Undo report">${ICONS.undo}</button>` : ''}
+                    </div></td>
+                </tr>`).join('') :
+                `<tr><td class="empty" colspan="10">${reports.length ? 'No reports match.' : 'No broken codes reported yet.'}</td></tr>`;
+        }
+
+        $('report-search').addEventListener('input', renderReports);
+        $('report-filter').addEventListener('change', renderReports);
 
         // ---------- MESSAGES ----------
         function renderMessages() {
