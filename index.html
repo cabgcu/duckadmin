@@ -1663,8 +1663,17 @@
             return canvas ? canvas.toDataURL('image/png') : holder.querySelector('img').src;
         }
 
-        function printLabels(ducks) {
-            if (!ducks.length) return snackbar('No ducks to print.');
+        // Hologram / virtual codes aren't hidden anywhere physical, so they're
+        // never printed (same rule as the database: Virtual, Hologram or Holo,
+        // optionally followed by "duck" or "code")
+        function isHologram(type) {
+            return /^(virtual|hologram|holo)( (duck|code))?$/.test(String(type || '').trim().toLowerCase());
+        }
+
+        function printLabels(allDucks) {
+            const ducks = allDucks.filter(d => !isHologram(d.duck_type));
+            const skipped = allDucks.length - ducks.length;
+            if (!ducks.length) return snackbar(skipped ? 'Hologram codes are virtual, so there\'s nothing to print.' : 'No ducks to print.');
             if (typeof QRCode === 'undefined') return snackbar('QR library failed to load. Reload and try again.');
             // Open the window right away (inside the click) so pop-up blockers allow it
             const win = window.open('', '_blank');
@@ -1700,7 +1709,8 @@ ${sheets.join('\n')}
                 for (let pt = 5; c.scrollWidth > c.clientWidth && pt > 3.5; pt -= 0.25) c.style.fontSize = pt - 0.25 + 'pt';
             });
             setTimeout(() => { win.focus(); win.print(); }, 400);
-            snackbar(`Printing ${count} label${count === 1 ? '' : 's'} on ${sheets.length} OL3625 sheet${sheets.length === 1 ? '' : 's'}.`);
+            snackbar(`Printing ${count} label${count === 1 ? '' : 's'} on ${sheets.length} OL3625 sheet${sheets.length === 1 ? '' : 's'}` +
+                (skipped ? ` (skipped ${skipped} hologram code${skipped === 1 ? '' : 's'}).` : '.'));
         }
 
         function duckCSV(ducks, filename) {
