@@ -614,18 +614,6 @@
         }
 
         /* Printable QR labels */
-        #print-area { display: none; }
-        @media print {
-            @page { margin: 12mm; }
-            html, body { background: #fff !important; color: #000; padding: 0; }
-            body > *:not(#print-area) { display: none !important; }
-            #print-area { display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 8mm; }
-            .label { break-inside: avoid; border: 1px dashed #999; border-radius: 3mm; padding: 4mm; text-align: center; }
-            .label canvas { display: none !important; }
-            .label img { width: 100%; height: auto; display: block !important; }
-            .label b { display: block; margin-top: 2mm; font-size: 12pt; }
-            .label span { display: block; font-size: 9pt; color: #444; }
-        }
     </style>
 </head>
 <body>
@@ -1028,7 +1016,6 @@
     </dialog>
 
     <div id="snackbar" class="snackbar"></div>
-    <div id="print-area"></div>
 
     <script>
         // ---------- STUDENT SITE ----------
@@ -1568,17 +1555,128 @@
             $('qr-dialog').showModal();
         }
 
+        // ---------- PRINTING: OL3625 label sheets ----------
+        // 1" square labels, 7 x 9 = 63 per letter sheet. This is the exact
+        // OL3625 template; one QR code per label, extra sheets as needed.
+        const LABELS_PER_SHEET = 63;
+        const OL3625_STYLE = `
+    /* --- OL3625 LABEL VARIABLES --- */
+    :root {
+        --page-width: 8.5in;
+        --page-height: 11in;
+
+        /* Standard OL3625 margins */
+        --page-margin-top: 0.5in;
+        --page-margin-left: 0.3125in;
+
+        /* 1-inch square labels */
+        --label-width: 1in;
+        --label-height: 1in;
+
+        /* 7x9 Grid = 63 labels per page */
+        --columns: 7;
+        --rows: 9;
+
+        /* Spacing between labels */
+        --gap-horizontal: 0.125in;
+        --gap-vertical: 0.125in;
+    }
+
+    @page {
+        size: letter;
+        margin: 0;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        background-color: #f0f0f0;
+        font-family: sans-serif;
+        -webkit-print-color-adjust: exact;
+    }
+
+    .sheet {
+        width: var(--page-width);
+        height: var(--page-height);
+        padding-top: var(--page-margin-top);
+        padding-left: var(--page-margin-left);
+        background: white;
+        margin: 0 auto;
+        box-sizing: border-box;
+        page-break-after: always;
+        position: relative;
+    }
+
+    .label-grid {
+        display: grid;
+        grid-template-columns: repeat(var(--columns), var(--label-width));
+        grid-template-rows: repeat(var(--rows), var(--label-height));
+        column-gap: var(--gap-horizontal);
+        row-gap: var(--gap-vertical);
+    }
+
+    .label {
+        width: var(--label-width);
+        height: var(--label-height);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        /* Print testing border - remove when printing on actual labels */
+        border: 1px dashed #e5e7eb;
+    }
+
+    .label img, .label canvas {
+        max-width: 90%;
+        max-height: 90%;
+        object-fit: contain;
+    }
+
+    @media print {
+        body { background-color: white; }
+        .sheet { margin: 0; box-shadow: none; padding-top: var(--page-margin-top); padding-left: var(--page-margin-left); }
+        .label { border: none; }
+    }`;
+
+        // QR code as a PNG data URL (rendered off-screen at print resolution)
+        function qrDataURL(text) {
+            const holder = document.createElement('div');
+            new QRCode(holder, { text, width: 300, height: 300, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+            const canvas = holder.querySelector('canvas');
+            return canvas ? canvas.toDataURL('image/png') : holder.querySelector('img').src;
+        }
+
         function printLabels(ducks) {
             if (!ducks.length) return snackbar('No ducks to print.');
-            const area = $('print-area');
-            area.innerHTML = ducks.map((d, i) => `
-                <div class="label">
-                    <div id="print-qr-${i}"></div>
-                    <b>${esc(d.duck_id)}</b>
-                    <span>${esc(d.duck_type ? d.duck_type + ' Duck' : 'Duck')} · ${esc(d.points)} pts</span>
-                </div>`).join('');
-            ducks.forEach((d, i) => renderQR($('print-qr-' + i), duckLink(d), 400));
-            setTimeout(() => window.print(), 300);
+            if (typeof QRCode === 'undefined') return snackbar('QR library failed to load. Reload and try again.');
+            // Open the window right away (inside the click) so pop-up blockers allow it
+            const win = window.open('', '_blank');
+            if (!win) return snackbar('Allow pop-ups for this site to print labels.');
+
+            const labels = ducks.map(d =>
+                `<div class="label"><img src="${qrDataURL(duckLink(d))}" alt="${esc(d.duck_id)}"></div>`);
+            const sheets = [];
+            for (let i = 0; i < labels.length; i += LABELS_PER_SHEET) {
+                sheets.push(`<div class="sheet">\n    <div class="label-grid">\n${labels.slice(i, i + LABELS_PER_SHEET).join('\n')}\n    </div>\n</div>`);
+            }
+            const count = ducks.length;
+            win.document.open();
+            win.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR Code Labels - OL3625 (${count} duck${count === 1 ? '' : 's'})</title>
+<style>${OL3625_STYLE}
+</style>
+</head>
+<body>
+${sheets.join('\n')}
+</body>
+</html>`);
+            win.document.close();
+            setTimeout(() => { win.focus(); win.print(); }, 400);
+            snackbar(`Printing ${count} label${count === 1 ? '' : 's'} on ${sheets.length} OL3625 sheet${sheets.length === 1 ? '' : 's'}.`);
         }
 
         function duckCSV(ducks, filename) {
