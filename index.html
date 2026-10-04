@@ -396,6 +396,9 @@
         .holo-count { font-variant-numeric: tabular-nums; }
         .btn.frozen-filter.on { background: rgba(120, 200, 255, 0.18); border-color: rgba(140, 210, 255, 0.6); color: #cfeeff; }
         .status-pill.inactive { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid var(--border-light); }
+        .duck-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .duck-filters select { height: 40px; font-size: 13px; max-width: 200px; }
+        .duck-filters select.on { border-color: var(--brand-primary-hover); box-shadow: 0 0 0 1px var(--brand-primary-hover); }
         .selection-bar select { height: 32px; font-size: 12px; max-width: 180px; }
         .check-field { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; color: var(--text-muted); font-size: 14px; cursor: pointer; }
 
@@ -585,6 +588,8 @@
             .stat-card { padding: 16px; }
             .stat-val { font-size: 1.8rem; }
             .search-wrapper { flex: 1 1 100%; }
+            .duck-filters { flex: 1 1 100%; }
+            .duck-filters select { flex: 1 1 140px; max-width: none; }
         }
 
         /* ── MOBILE ── */
@@ -696,6 +701,27 @@
                     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     <input id="duck-search" type="search" placeholder="Search ducks, QR codes, or rescuers...">
                 </div>
+                <div class="duck-filters">
+                    <select id="duck-filter-type" class="duck-filter" aria-label="Filter by type"></select>
+                    <select id="duck-filter-status" class="duck-filter" aria-label="Filter by status">
+                        <option value="">All statuses</option>
+                        <option value="open">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="claimed">Claimed</option>
+                    </select>
+                    <select id="duck-filter-location" class="duck-filter" aria-label="Filter by location"></select>
+                    <select id="duck-sort" aria-label="Sort ducks">
+                        <option value="" hidden>Sort: by column</option>
+                        <option value="duck_id:1">Sort: Duck ID</option>
+                        <option value="points:-1">Sort: Points, high → low</option>
+                        <option value="points:1">Sort: Points, low → high</option>
+                        <option value="duck_type:1">Sort: Type</option>
+                        <option value="location:1">Sort: Location</option>
+                        <option value="status:1">Sort: Status</option>
+                        <option value="claimed_at:-1">Sort: Recently found</option>
+                    </select>
+                    <button type="button" id="duck-filter-clear" class="link" data-action="clear-duck-filters" hidden>Clear filters</button>
+                </div>
                 <span class="spacer"></span>
                 <button type="button" class="btn" data-action="download-ducks">Download CSV</button>
                 <button type="button" class="btn" data-action="print-all">Print QR codes</button>
@@ -727,7 +753,7 @@
                             <th class="sortable num" data-sort="ducks" data-key="points">Points</th>
                             <th class="sortable" data-sort="ducks" data-key="location">Location</th>
                             <th class="sortable" data-sort="ducks" data-key="qr_code">QR code</th>
-                            <th class="sortable" data-sort="ducks" data-key="claimed">Status</th>
+                            <th class="sortable" data-sort="ducks" data-key="status">Status</th>
                             <th class="sortable" data-sort="ducks" data-key="claimed_by_name">Found by</th>
                             <th class="sortable" data-sort="ducks" data-key="claimed_at">Found at</th>
                             <th class="num">Actions</th>
@@ -1266,8 +1292,10 @@
 
         function sorted(list, kind) {
             const { key, dir } = sort[kind];
+            // Status sorts Active, then Inactive, then Claimed
+            const value = row => key === 'status' ? ({ open: 0, inactive: 1, claimed: 2 })[duckStatus(row)] : row[key];
             return list.slice().sort((a, b) => {
-                let x = a[key], y = b[key];
+                let x = value(a), y = value(b);
                 if (typeof x === 'boolean') { x = +x; y = +y; }
                 if (x == null || x === '') return 1;
                 if (y == null || y === '') return -1;
@@ -1282,8 +1310,41 @@
 
         function visibleDucks() {
             const term = $('duck-search').value.trim().toLowerCase();
+            const type = $('duck-filter-type').value;
+            const status = $('duck-filter-status').value;
+            const location = $('duck-filter-location').value;
             return sorted(state.ducks.filter(d =>
+                (!type || (type === NONE ? !d.duck_type : d.duck_type === type)) &&
+                (!status || duckStatus(d) === status) &&
+                (!location || (location === NONE ? !d.location : d.location === location)) &&
                 matches(d, ['duck_id', 'duck_type', 'location', 'qr_code', 'claimed_by_name', 'claimed_by'], term)), 'ducks');
+        }
+
+        // Type and location dropdowns list what the ducks actually have;
+        // NONE is the "No type" / "No location" choice
+        const NONE = '__none__';
+        function fillDuckFilter(select, allLabel, noneLabel, values) {
+            const current = select.value;
+            const list = [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+            const counts = {};
+            values.forEach(v => { counts[v || NONE] = (counts[v || NONE] || 0) + 1; });
+            select.innerHTML = `<option value="">${allLabel}</option>` +
+                list.map(v => `<option value="${esc(v)}">${esc(v)} (${counts[v]})</option>`).join('') +
+                (counts[NONE] ? `<option value="${NONE}">${noneLabel} (${counts[NONE]})</option>` : '');
+            select.value = [...select.options].some(o => o.value === current) ? current : '';
+        }
+
+        function renderDuckFilters() {
+            fillDuckFilter($('duck-filter-type'), 'All types', 'No type', state.ducks.map(d => d.duck_type));
+            fillDuckFilter($('duck-filter-location'), 'All locations', 'No location', state.ducks.map(d => d.location));
+            let filtered = false;
+            ['duck-filter-type', 'duck-filter-status', 'duck-filter-location'].forEach(id => {
+                $(id).classList.toggle('on', !!$(id).value);
+                filtered = filtered || !!$(id).value;
+            });
+            $('duck-filter-clear').hidden = !filtered;
+            const current = `${sort.ducks.key}:${sort.ducks.dir}`;
+            $('duck-sort').value = [...$('duck-sort').options].some(o => o.value === current) ? current : '';
         }
 
         function duckPageCount(total) {
@@ -1300,6 +1361,7 @@
         }
 
         function renderDucks() {
+            renderDuckFilters();
             const all = visibleDucks();
             const ducks = pagedDucks(all);
             $('duck-rows').innerHTML = ducks.length ? ducks.map(d => `
@@ -1320,7 +1382,7 @@
                         <button type="button" class="btn-icon-sq danger" data-action="delete-duck" data-id="${esc(d.duck_id)}" title="Delete duck" aria-label="Delete duck">${ICONS.trash}</button>
                     </div></td>
                 </tr>`).join('') :
-                `<tr><td class="empty" colspan="10">${state.ducks.length ? 'No ducks match your search.' : 'No ducks yet. Use Add duck or Bulk create.'}</td></tr>`;
+                `<tr><td class="empty" colspan="10">${state.ducks.length ? 'No ducks match your search or filters.' : 'No ducks yet. Use Add duck or Bulk create.'}</td></tr>`;
 
             const pages = duckPageCount(all.length);
             $('duck-pager').hidden = all.length <= DUCK_PAGE_SIZE;
@@ -1593,6 +1655,10 @@
                 case 'download-ducks': return duckCSV(visibleDucks(), `duck-hunt-ducks-${today()}.csv`);
                 case 'download-selected': return duckCSV(visibleDucks().filter(d => selected.has(d.duck_id)), `duck-hunt-ducks-${today()}.csv`);
                 case 'clear-selection': selected.clear(); return render();
+                case 'clear-duck-filters':
+                    ['duck-filter-type', 'duck-filter-status', 'duck-filter-location'].forEach(f => { $(f).value = ''; });
+                    duckPage = 0;
+                    return renderDucks();
                 case 'select-every-duck':
                     visibleDucks().forEach(d => selected.add(d.duck_id));
                     return renderDucks();
@@ -1836,6 +1902,15 @@
         });
 
         $('duck-search').addEventListener('input', () => { duckPage = 0; renderDucks(); });
+        ['duck-filter-type', 'duck-filter-status', 'duck-filter-location'].forEach(id =>
+            $(id).addEventListener('change', () => { duckPage = 0; renderDucks(); }));
+        $('duck-sort').addEventListener('change', () => {
+            const [key, dir] = $('duck-sort').value.split(':');
+            if (!key) return;
+            sort.ducks = { key, dir: Number(dir) };
+            duckPage = 0;
+            render();
+        });
         $('rescuer-search').addEventListener('input', renderRescuers);
         $('scan-search').addEventListener('input', renderScans);
 
