@@ -596,6 +596,7 @@
             </div>
             <div id="duck-selection" class="selection-bar" hidden>
                 <b id="duck-selected-count"></b>
+                <button type="button" class="link" id="duck-select-every" data-action="select-every-duck" hidden></button>
                 <span style="flex:1"></span>
                 <label>Set points to <input id="bulk-points" type="number" min="0" value="10"></label>
                 <button type="button" class="btn btn-sm" data-action="bulk-points">Apply</button>
@@ -1106,7 +1107,12 @@
             $('select-all').checked = allVisibleSelected;
             $('select-all').indeterminate = !allVisibleSelected && ducks.some(d => selected.has(d.duck_id));
             $('duck-selection').hidden = selected.size === 0;
-            $('duck-selected-count').textContent = `${selected.size} selected`;
+            $('duck-selected-count').textContent = `${selected.size.toLocaleString()} selected`;
+            const unselected = all.filter(d => !selected.has(d.duck_id)).length;
+            $('duck-select-every').hidden = unselected === 0;
+            $('duck-select-every').textContent = $('duck-search').value.trim()
+                ? `Select all ${all.length.toLocaleString()} matching ducks`
+                : `Select all ${all.length.toLocaleString()} ducks`;
         }
 
         function renderRescuers() {
@@ -1339,6 +1345,9 @@
                 case 'download-ducks': return duckCSV(visibleDucks(), `duck-hunt-ducks-${today()}.csv`);
                 case 'download-selected': return duckCSV(visibleDucks().filter(d => selected.has(d.duck_id)), `duck-hunt-ducks-${today()}.csv`);
                 case 'clear-selection': selected.clear(); return render();
+                case 'select-every-duck':
+                    visibleDucks().forEach(d => selected.add(d.duck_id));
+                    return renderDucks();
                 case 'duck-page':
                     duckPage += Number(el.dataset.dir);
                     renderDucks();
