@@ -1555,6 +1555,13 @@
             $('qr-dialog').showModal();
         }
 
+        // "Golden" -> "Golden Duck", "Golden Duck" stays, no type -> ''
+        function duckName(type) {
+            const t = String(type || '').trim();
+            if (!t) return '';
+            return /duck|code/i.test(t) ? t : `${t} Duck`;
+        }
+
         // ---------- PRINTING: OL3625 label sheets ----------
         // 1" square labels, 7 x 9 = 63 per letter sheet. This is the exact
         // OL3625 template; one QR code per label, extra sheets as needed.
@@ -1636,6 +1643,16 @@
         body { background-color: white; }
         .sheet { margin: 0; box-shadow: none; padding-top: var(--page-margin-top); padding-left: var(--page-margin-left); }
         .label { border: none; }
+    }
+
+    /* Tiny "type · ID" caption in the gap under each label. Absolutely
+       positioned, so the grid, labels and QR size are untouched. */
+    .label { position: relative; }
+    .label .caption {
+        position: absolute; top: 100%; left: calc(var(--gap-horizontal) / -2); right: calc(var(--gap-horizontal) / -2); height: var(--gap-vertical);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 5pt; line-height: 1; color: #333; letter-spacing: 0.01em;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }`;
 
         // QR code as a PNG data URL (rendered off-screen at print resolution)
@@ -1653,8 +1670,11 @@
             const win = window.open('', '_blank');
             if (!win) return snackbar('Allow pop-ups for this site to print labels.');
 
-            const labels = ducks.map(d =>
-                `<div class="label"><img src="${qrDataURL(duckLink(d))}" alt="${esc(d.duck_id)}"></div>`);
+            const labels = ducks.map(d => {
+                const type = String(d.duck_type || '').replace(/\s+duck$/i, '').trim(); // "Golden Duck" -> "Golden"
+                const caption = [type, d.duck_id].filter(Boolean).join(' · ');
+                return `<div class="label"><img src="${qrDataURL(duckLink(d))}" alt="${esc(d.duck_id)}"><span class="caption">${esc(caption)}</span></div>`;
+            });
             const sheets = [];
             for (let i = 0; i < labels.length; i += LABELS_PER_SHEET) {
                 sheets.push(`<div class="sheet">\n    <div class="label-grid">\n${labels.slice(i, i + LABELS_PER_SHEET).join('\n')}\n    </div>\n</div>`);
@@ -1675,6 +1695,10 @@ ${sheets.join('\n')}
 </body>
 </html>`);
             win.document.close();
+            // Shrink any caption that's too long for its label (down to 3.5pt)
+            win.document.querySelectorAll('.caption').forEach(c => {
+                for (let pt = 5; c.scrollWidth > c.clientWidth && pt > 3.5; pt -= 0.25) c.style.fontSize = pt - 0.25 + 'pt';
+            });
             setTimeout(() => { win.focus(); win.print(); }, 400);
             snackbar(`Printing ${count} label${count === 1 ? '' : 's'} on ${sheets.length} OL3625 sheet${sheets.length === 1 ? '' : 's'}.`);
         }
