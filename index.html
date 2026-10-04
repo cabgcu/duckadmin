@@ -392,6 +392,9 @@
         .status-pill { font-size: 11px; font-weight: 800; padding: 5px 10px; border-radius: var(--radius-button); text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
         .status-pill.claimed { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
         .status-pill.open { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-border); }
+        .status-pill.frozen { background: rgba(120, 200, 255, 0.14); color: #9fdcff; border: 1px solid rgba(140, 210, 255, 0.45); margin-left: 6px; }
+        .holo-count { font-variant-numeric: tabular-nums; }
+        .btn.frozen-filter.on { background: rgba(120, 200, 255, 0.18); border-color: rgba(140, 210, 255, 0.6); color: #cfeeff; }
         .status-pill.inactive { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid var(--border-light); }
         .selection-bar select { height: 32px; font-size: 12px; max-width: 180px; }
         .check-field { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; color: var(--text-muted); font-size: 14px; cursor: pointer; }
@@ -750,6 +753,7 @@
                     <input id="rescuer-search" type="search" placeholder="Search name, email, or student ID...">
                 </div>
                 <span class="spacer"></span>
+                <button type="button" id="frozen-filter" class="btn frozen-filter" data-action="toggle-frozen-filter" hidden></button>
                 <button type="button" class="btn" data-action="download-rescuers">Download CSV</button>
             </div>
             <div class="table-wrap">
@@ -763,6 +767,7 @@
                             <th class="sortable" data-sort="players" data-key="email">Email</th>
                             <th class="sortable num" data-sort="players" data-key="points">Points</th>
                             <th class="sortable num" data-sort="players" data-key="codes_scanned">Ducks</th>
+                            <th class="sortable num" data-sort="players" data-key="holograms_today" title="Hologram codes scanned today (resets at midnight)">Holograms today</th>
                             <th class="sortable" data-sort="players" data-key="created_at">Registered</th>
                             <th class="num">Actions</th>
                         </tr>
@@ -1009,6 +1014,7 @@
         const sort = { ducks: { key: 'duck_id', dir: 1 }, players: { key: 'place', dir: 1 } };
         const selected = new Set();
         let activeTab = 'ducks';
+        let frozenOnly = false; // Rescuers tab: show only rescuers at the hologram limit
         // The duck table shows one page at a time so big hunts stay fast;
         // search, sort, print and CSV still cover every duck.
         const DUCK_PAGE_SIZE = 100;
@@ -1324,8 +1330,14 @@
 
         function renderRescuers() {
             const term = $('rescuer-search').value.trim().toLowerCase();
-            const players = sorted(state.players.filter(p =>
-                matches(p, ['first_name', 'last_name', 'student_id', 'email'], term) || fullName(p).toLowerCase().includes(term)), 'players');
+            const frozenCount = state.players.filter(p => p.frozen).length;
+            if (!frozenCount) frozenOnly = false;
+            $('frozen-filter').hidden = !frozenCount;
+            $('frozen-filter').classList.toggle('on', frozenOnly);
+            $('frozen-filter').textContent = frozenOnly ? `❄ Showing ${frozenCount} frozen` : `❄ ${frozenCount} frozen`;
+            const limit = state.hologram_limit || 10;
+            const players = sorted(state.players.filter(p => (!frozenOnly || p.frozen) &&
+                (matches(p, ['first_name', 'last_name', 'student_id', 'email'], term) || fullName(p).toLowerCase().includes(term))), 'players');
             $('rescuer-rows').innerHTML = players.length ? players.map(p => `
                 <tr>
                     <td class="num"><span class="rank">#${esc(p.place)}</span></td>
@@ -1335,13 +1347,15 @@
                     <td>${esc(p.email)}</td>
                     <td class="num"><input class="cell-num" type="number" min="0" value="${esc(p.points)}" data-points-player="${esc(p.student_id)}" aria-label="Points for ${esc(fullName(p))}"></td>
                     <td class="num">${esc(p.codes_scanned)}</td>
+                    <td class="num"><span class="holo-count">${esc(p.holograms_today ?? 0)} / ${esc(limit)}</span>${p.frozen ? '<span class="status-pill frozen">Frozen</span>' : ''}</td>
                     <td class="muted">${esc(formatDate(p.created_at))}</td>
                     <td class="actions"><div class="action-wrapper">
+                        ${p.frozen ? `<button type="button" class="btn btn-sm" data-action="unfreeze-rescuer" data-id="${esc(p.student_id)}" title="Give them a fresh set of hologram scans for today">Unfreeze</button>` : ''}
                         <button type="button" class="btn-icon-sq" data-action="edit-rescuer" data-id="${esc(p.student_id)}" title="Edit rescuer" aria-label="Edit rescuer">${ICONS.edit}</button>
                         <button type="button" class="btn-icon-sq danger" data-action="delete-rescuer" data-id="${esc(p.student_id)}" title="Delete rescuer" aria-label="Delete rescuer">${ICONS.trash}</button>
                     </div></td>
                 </tr>`).join('') :
-                `<tr><td class="empty" colspan="9">${state.players.length ? 'No rescuers match your search.' : 'No rescuers have registered yet.'}</td></tr>`;
+                `<tr><td class="empty" colspan="10">${state.players.length ? 'No rescuers match your search.' : 'No rescuers have registered yet.'}</td></tr>`;
         }
 
         function renderScans() {
@@ -1611,6 +1625,22 @@
                     return busy(el, async () => {
                         await rpc('admin_set_hunt_open', { p_open: turnOn });
                         snackbar(turnOn ? 'Duck Hunt is on.' : 'Duck Hunt is off.');
+                        await load();
+                    });
+                }
+
+                case 'toggle-frozen-filter':
+                    frozenOnly = !frozenOnly;
+                    return renderRescuers();
+
+                case 'unfreeze-rescuer': {
+                    const p = findPlayer(id);
+                    const ok = await confirmDialog(`Unfreeze ${fullName(p) || id}?`,
+                        `They get a fresh ${state.hologram_limit || 10} hologram scans for the rest of today. The count resets at midnight as usual.`, 'Unfreeze');
+                    if (!ok) return;
+                    return busy(el, async () => {
+                        await rpc('admin_unfreeze_player', { p_student_id: id });
+                        snackbar(`${fullName(p) || id} is unfrozen.`);
                         await load();
                     });
                 }
