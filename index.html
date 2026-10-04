@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" href="https://i.imgur.com/Srn2y30.png">
     <link rel="apple-touch-icon" href="https://i.imgur.com/Srn2y30.png">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         :root {
@@ -534,7 +534,7 @@
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
         .qr-box { width: 240px; margin: 0 auto 12px; padding: 12px; background: #fff; border-radius: var(--radius-lg); }
-        .qr-box canvas, .qr-box img { width: 100%; height: auto; image-rendering: pixelated; display: block; }
+        .qr-box canvas { width: 100%; height: auto; display: block; }
         .preview { background: var(--bg-hover); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 12px 16px; color: var(--text-muted); font-size: 13px; }
 
         /* ── TOAST ── */
@@ -1585,13 +1585,79 @@
 
         ['b-count', 'b-points', 'b-prefix', 'b-start', 'b-type'].forEach(id => $(id).addEventListener('input', updateBulkPreview));
 
+        // ---------- QR CODE TEMPLATE ----------
+        // Every duck's code is drawn the same way: black tiny-duck modules on
+        // white, square corner finder patterns (so phone cameras lock on),
+        // level H error correction, a 4-module quiet zone and the CAB
+        // "Verified" line along the bottom margin.
+        const QR_COLOR = '#000000';
+        const QR_QUIET_ZONE = 4;
+        const QR_BRANDING = 'Verified By The Canyon Activities Board';
+
+        function duckQRCanvas(text, size) {
+            const qr = qrcode(0, 'H'); // 0 = smallest version that fits
+            qr.addData(text);
+            qr.make();
+            const count = qr.getModuleCount();
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const cell = size / (count + QR_QUIET_ZONE * 2);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, size, size);
+            ctx.fillStyle = QR_COLOR;
+            for (let row = 0; row < count; row++) {
+                for (let col = 0; col < count; col++) {
+                    if (!qr.isDark(row, col)) continue;
+                    const x = (col + QR_QUIET_ZONE) * cell;
+                    const y = (row + QR_QUIET_ZONE) * cell;
+                    // +0.5 stops anti-aliasing gaps between finder squares
+                    if (isFinderPattern(row, col, count)) ctx.fillRect(x, y, cell + 0.5, cell + 0.5);
+                    else drawDuck(ctx, x, y, cell);
+                }
+            }
+
+            ctx.font = `bold ${size * 0.032}px Inter, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(QR_BRANDING, size / 2, size - size * 0.015);
+            return canvas;
+        }
+
+        // Inside one of the three 7x7 corner finder patterns
+        function isFinderPattern(row, col, count) {
+            return (row < 7 && col < 7) || (row < 7 && col >= count - 7) || (row >= count - 7 && col < 7);
+        }
+
+        // Duck silhouette on a 100x100 grid, scaled 1.2x so it has enough ink to scan
+        function drawDuck(ctx, x, y, size) {
+            const scale = (size / 100) * 1.2;
+            const offset = (size - 100 * scale) / 2;
+            ctx.save();
+            ctx.translate(x + offset, y + offset);
+            ctx.scale(scale, scale);
+            ctx.beginPath();
+            ctx.moveTo(35, 20);
+            ctx.bezierCurveTo(45, 5, 75, 5, 75, 25);    // head
+            ctx.lineTo(98, 30);                          // beak
+            ctx.bezierCurveTo(102, 35, 95, 45, 85, 45);
+            ctx.bezierCurveTo(75, 45, 90, 60, 90, 80);   // chest
+            ctx.bezierCurveTo(90, 100, 20, 100, 15, 80); // belly
+            ctx.bezierCurveTo(5, 60, 10, 45, 25, 55);    // tail
+            ctx.bezierCurveTo(35, 40, 25, 20, 35, 20);   // back
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
         function renderQR(el, text, size) {
             el.innerHTML = '';
-            if (typeof QRCode === 'undefined') {
+            if (typeof qrcode === 'undefined') {
                 el.textContent = 'QR library failed to load.';
                 return;
             }
-            new QRCode(el, { text, width: size, height: size, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+            el.appendChild(duckQRCanvas(text, size));
         }
 
         // Printed QR codes are links to the student site, so a phone's own camera
@@ -1609,7 +1675,7 @@
             qrDuckId = duck.duck_id;
             $('qr-title').textContent = `${duck.duck_id}${duck.duck_type ? ' · ' + duck.duck_type : ''}`;
             $('qr-text').textContent = duck.qr_code;
-            renderQR($('qr-box'), duckLink(duck), 512);
+            renderQR($('qr-box'), duckLink(duck), 1000);
             $('qr-dialog').showModal();
         }
 
@@ -1715,10 +1781,7 @@
 
         // QR code as a PNG data URL (rendered off-screen at print resolution)
         function qrDataURL(text) {
-            const holder = document.createElement('div');
-            new QRCode(holder, { text, width: 300, height: 300, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-            const canvas = holder.querySelector('canvas');
-            return canvas ? canvas.toDataURL('image/png') : holder.querySelector('img').src;
+            return duckQRCanvas(text, 600).toDataURL('image/png');
         }
 
         // Hologram / virtual codes aren't hidden anywhere physical, so they're
@@ -1732,7 +1795,7 @@
             const ducks = allDucks.filter(d => !isHologram(d.duck_type));
             const skipped = allDucks.length - ducks.length;
             if (!ducks.length) return snackbar(skipped ? 'Hologram codes are virtual, so there\'s nothing to print.' : 'No ducks to print.');
-            if (typeof QRCode === 'undefined') return snackbar('QR library failed to load. Reload and try again.');
+            if (typeof qrcode === 'undefined') return snackbar('QR library failed to load. Reload and try again.');
             // Open the window right away (inside the click) so pop-up blockers allow it
             const win = window.open('', '_blank');
             if (!win) return snackbar('Allow pop-ups for this site to print labels.');
@@ -1833,9 +1896,9 @@ ${sheets.join('\n')}
 
                 case 'download-qr': {
                     const canvas = document.querySelector('#qr-box canvas');
-                    const img = document.querySelector('#qr-box img');
+                    if (!canvas) return;
                     const link = document.createElement('a');
-                    link.href = canvas ? canvas.toDataURL('image/png') : img.src;
+                    link.href = canvas.toDataURL('image/png');
                     link.download = `${qrDuckId}-qr.png`;
                     return link.click();
                 }
