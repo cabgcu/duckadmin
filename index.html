@@ -408,6 +408,41 @@
         #admin-qr-reader { position: absolute; inset: 0; border: none !important; }
         #admin-qr-reader video { width: 100% !important; height: 100% !important; object-fit: cover; }
         #admin-qr-reader img, #admin-qr-reader__dashboard, #admin-qr-reader__header_message { display: none !important; }
+        /* Glow around the camera after each scan: green = done, amber = nothing changed, red = problem */
+        .scanner-box::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 3; }
+        .scanner-box.flash-ok { border-color: var(--success-text); animation: glow-ok 1.4s ease-out; }
+        .scanner-box.flash-ok::after { animation: inner-ok 1.4s ease-out; }
+        .scanner-box.flash-warn { animation: glow-warn 1.2s ease-out; }
+        .scanner-box.flash-err { animation: glow-err 1.2s ease-out; }
+        @keyframes glow-ok {
+            0%, 40% { box-shadow: 0 0 0 4px var(--success-text), 0 0 48px 12px rgba(52, 199, 89, 0.7); }
+            100% { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
+        }
+        @keyframes inner-ok {
+            0%, 40% { box-shadow: inset 0 0 60px 10px rgba(52, 199, 89, 0.55); }
+            100% { box-shadow: inset 0 0 0 0 transparent; }
+        }
+        @keyframes glow-warn {
+            0%, 30% { box-shadow: 0 0 0 3px var(--warning-text), 0 0 32px 6px rgba(255, 149, 0, 0.5); }
+            100% { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
+        }
+        @keyframes glow-err {
+            0%, 30% { box-shadow: 0 0 0 3px var(--danger-text), 0 0 32px 6px rgba(255, 59, 48, 0.55); }
+            100% { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
+        }
+        .scan-check {
+            position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center;
+            pointer-events: none; opacity: 0;
+        }
+        .scan-check svg { width: 96px; height: 96px; color: var(--success-text); filter: drop-shadow(0 0 16px rgba(52, 199, 89, 0.9)); }
+        .scanner-box.flash-ok .scan-check { animation: check-pop 1.4s ease-out; }
+        @keyframes check-pop {
+            0% { opacity: 0; transform: scale(0.5); }
+            15% { opacity: 1; transform: scale(1.1); }
+            30% { transform: scale(1); }
+            70% { opacity: 1; }
+            100% { opacity: 0; }
+        }
         .scanner-idle { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--text-muted); font-size: 14px; }
         .scan-last { padding: 14px 16px; border-radius: var(--radius-lg); font-weight: 700; border: 1px solid var(--border-light); background: var(--bg-hover); }
         .scan-last:empty { display: none; }
@@ -746,9 +781,10 @@
                         <select id="scan-location" class="location-select" data-empty="Pick a location…"></select>
                     </div>
                     <p id="scan-hint" class="scan-hint"></p>
-                    <div class="scanner-box">
+                    <div id="scanner-box" class="scanner-box">
                         <div id="admin-qr-reader"></div>
                         <div id="scanner-idle" class="scanner-idle">Camera is off.</div>
+                        <div class="scan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                     </div>
                     <button type="button" id="scanner-btn" class="btn btn-primary" data-action="toggle-scanner">Start camera</button>
                     <div id="scan-last" class="scan-last" aria-live="polite"></div>
@@ -1811,6 +1847,10 @@
             const last = $('scan-last');
             last.className = 'scan-last scan-' + kind;
             last.textContent = message;
+            const box = $('scanner-box');
+            box.classList.remove('flash-ok', 'flash-warn', 'flash-err');
+            void box.offsetWidth; // restart the animation for back-to-back scans
+            box.classList.add('flash-' + kind);
             if (navigator.vibrate) navigator.vibrate(kind === 'err' ? [80, 60, 80] : kind === 'ok' ? 60 : 30);
 
             scanResults.unshift({ kind, message, at: new Date() });
