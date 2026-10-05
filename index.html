@@ -583,7 +583,7 @@
             <div class="filter-row">
                 <div class="search-wrapper">
                     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input id="duck-search" type="search" placeholder="Search ducks, QR codes, or rescuers...">
+                    <input id="duck-search" type="search" placeholder="Search duck ID (e.g. CL), location, QR code, or rescuer...">
                 </div>
                 <div class="duck-filters">
                     <select id="duck-filter-type" class="duck-filter" aria-label="Filter by type"></select>
@@ -1249,8 +1249,24 @@
             return !term || fields.some(f => String(row[f] ?? '').toLowerCase().includes(term));
         }
 
+        // Duck search, built for picking out a batch to edit in bulk:
+        // - If any duck ID starts with the term ("CL"), it's an ID search and
+        //   only those ducks show (no stray QR codes, names or locations).
+        // - Otherwise a field matches when the term starts the field or one
+        //   of its words: "hall" finds "Clark Hall", "0042" finds "CL-0042",
+        //   but "cl" no longer hits the middle of a random QR code.
+        const DUCK_SEARCH_FIELDS = ['duck_id', 'duck_type', 'location', 'qr_code', 'claimed_by_name', 'claimed_by'];
+
+        function duckSearchFilter(term) {
+            if (!term) return () => true;
+            const idPrefix = d => String(d.duck_id ?? '').toLowerCase().startsWith(term);
+            if (state.ducks.some(idPrefix)) return idPrefix;
+            const wordStart = new RegExp('(^|[^a-z0-9])' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+            return d => DUCK_SEARCH_FIELDS.some(f => wordStart.test(String(d[f] ?? '').toLowerCase()));
+        }
+
         function visibleDucks() {
-            const term = $('duck-search').value.trim().toLowerCase();
+            const search = duckSearchFilter($('duck-search').value.trim().toLowerCase());
             const type = $('duck-filter-type').value;
             const status = $('duck-filter-status').value;
             const location = $('duck-filter-location').value;
@@ -1258,7 +1274,7 @@
                 (!type || (type === NONE ? !d.duck_type : d.duck_type === type)) &&
                 (!status || (status === 'broken' ? d.broken_reports > 0 : duckStatus(d) === status)) &&
                 (!location || (location === NONE ? !d.location : d.location === location)) &&
-                matches(d, ['duck_id', 'duck_type', 'location', 'qr_code', 'claimed_by_name', 'claimed_by'], term)), 'ducks');
+                search(d)), 'ducks');
         }
 
         // Type and location dropdowns list what the ducks actually have;
