@@ -1526,22 +1526,32 @@
             return (row < 7 && col < 7) || (row < 7 && col >= count - 7) || (row >= count - 7 && col < 7);
         }
 
-        // Duck silhouette on a 100x100 grid, scaled 1.2x so it has enough ink to scan
+        // Duck silhouette on a 100x100 grid, scaled 1.2x so it has enough ink to
+        // scan. Shared by the canvas QR and the vector label PDF.
+        const DUCK_SCALE = 1.2;
+        const DUCK_PATH = [
+            ['M', 35, 20],
+            ['C', 45, 5, 75, 5, 75, 25],     // head
+            ['L', 98, 30],                    // beak
+            ['C', 102, 35, 95, 45, 85, 45],
+            ['C', 75, 45, 90, 60, 90, 80],    // chest
+            ['C', 90, 100, 20, 100, 15, 80],  // belly
+            ['C', 5, 60, 10, 45, 25, 55],     // tail
+            ['C', 35, 40, 25, 20, 35, 20],    // back
+        ];
+
         function drawDuck(ctx, x, y, size) {
-            const scale = (size / 100) * 1.2;
+            const scale = (size / 100) * DUCK_SCALE;
             const offset = (size - 100 * scale) / 2;
             ctx.save();
             ctx.translate(x + offset, y + offset);
             ctx.scale(scale, scale);
             ctx.beginPath();
-            ctx.moveTo(35, 20);
-            ctx.bezierCurveTo(45, 5, 75, 5, 75, 25);    // head
-            ctx.lineTo(98, 30);                          // beak
-            ctx.bezierCurveTo(102, 35, 95, 45, 85, 45);
-            ctx.bezierCurveTo(75, 45, 90, 60, 90, 80);   // chest
-            ctx.bezierCurveTo(90, 100, 20, 100, 15, 80); // belly
-            ctx.bezierCurveTo(5, 60, 10, 45, 25, 55);    // tail
-            ctx.bezierCurveTo(35, 40, 25, 20, 35, 20);   // back
+            for (const [op, ...p] of DUCK_PATH) {
+                if (op === 'M') ctx.moveTo(...p);
+                else if (op === 'L') ctx.lineTo(...p);
+                else ctx.bezierCurveTo(...p);
+            }
             ctx.closePath();
             ctx.fill();
             ctx.restore();
@@ -1595,9 +1605,62 @@
         };
         const LABELS_PER_SHEET = OL3625.columns * OL3625.rows;
 
-        // QR code as a PNG data URL (rendered off-screen at print resolution)
-        function qrDataURL(text) {
-            return duckQRCanvas(text, 600).toDataURL('image/png');
+        // The PDF draws each QR code as vector shapes instead of embedding a
+        // rendered PNG: the duck is defined once as a reusable PDF form object
+        // and every dark module just references it. That keeps 20,000 labels
+        // to a few MB and seconds of work instead of GBs and half an hour.
+        // Everything below is in PDF points (1/72"), y measured from the bottom.
+        const PT = 72;
+        const pdfNum = v => +v.toFixed(3);
+
+        function defineDuckForm(pdf) {
+            // Form space is one QR module (0..1, y down); the bbox leaves room
+            // for the 1.2x duck spilling past its module like on the canvas
+            const s = DUCK_SCALE / 100, offset = (1 - DUCK_SCALE) / 2;
+            const ops = [`${s} 0 0 ${s} ${pdfNum(offset)} ${pdfNum(offset)} cm`];
+            for (const [op, ...p] of DUCK_PATH) ops.push(`${p.join(' ')} ${{ M: 'm', L: 'l', C: 'c' }[op]}`);
+            ops.push('h f');
+            pdf.beginFormObject(-0.5, -0.5, 2, 2, new pdf.Matrix(1, 0, 0, 1, 0, 0));
+            pdf.internal.write(ops.join('\n'));
+            pdf.endFormObject('duck');
+            return 'Xo1'; // jsPDF names form objects Xo1, Xo2... in creation order
+        }
+
+        // Same design as duckQRCanvas, drawn into the PDF at (x, y) = top-left
+        function drawQRToPDF(pdf, duckForm, text, x, y, size) {
+            const qr = qrcode(0, 'H');
+            qr.addData(text);
+            qr.make();
+            const count = qr.getModuleCount();
+            const cell = size / (count + QR_QUIET_ZONE * 2);
+            const pageHeight = pdf.internal.pageSize.getHeight();
+
+            // Switch to module coordinates: 1 unit = 1 module, origin at the
+            // top-left module, y pointing down
+            const ops = ['q', `${pdfNum(cell)} 0 0 ${pdfNum(-cell)} ${pdfNum(x + QR_QUIET_ZONE * cell)} ${pdfNum(pageHeight - y - QR_QUIET_ZONE * cell)} cm`, '0 g'];
+            for (let row = 0; row < count; row++) {
+                for (let col = 0; col < count; col++) {
+                    if (qr.isDark(row, col) && isFinderPattern(row, col, count)) ops.push(`${col} ${row} 1 1 re`);
+                }
+            }
+            ops.push('f');
+            // Each duck moves the origin relative to the previous one
+            let atCol = 0, atRow = 0;
+            for (let row = 0; row < count; row++) {
+                for (let col = 0; col < count; col++) {
+                    if (!qr.isDark(row, col) || isFinderPattern(row, col, count)) continue;
+                    ops.push(`1 0 0 1 ${col - atCol} ${row - atRow} cm /${duckForm} Do`);
+                    atCol = col;
+                    atRow = row;
+                }
+            }
+            ops.push('Q');
+            pdf.internal.write(ops.join('\n'));
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(size * 0.032);
+            pdf.setTextColor(0, 0, 0);
+            pdf.text(QR_BRANDING, x + size / 2, y + size - size * 0.015, { align: 'center', baseline: 'bottom' });
         }
 
         // Hologram / virtual codes aren't hidden anywhere physical, so they're
@@ -1607,42 +1670,72 @@
             return /^(virtual|hologram|holo)( (duck|code))?$/.test(String(type || '').trim().toLowerCase());
         }
 
-        function downloadLabelsPDF(allDucks, filename = `duck-hunt-labels-${today()}.pdf`) {
+        let labelsPDFBusy = false;
+
+        async function downloadLabelsPDF(allDucks, filename = `duck-hunt-labels-${today()}.pdf`) {
+            if (labelsPDFBusy) return snackbar('Already building a label PDF, hang tight.');
             const ducks = allDucks.filter(d => !isHologram(d.duck_type));
             const skipped = allDucks.length - ducks.length;
             if (!ducks.length) return snackbar(skipped ? 'Hologram codes are virtual, so there\'s nothing to print.' : 'No ducks to print.');
             if (typeof qrcode === 'undefined') return snackbar('QR library failed to load. Reload and try again.');
             if (!window.jspdf) return snackbar('PDF library failed to load. Reload and try again.');
 
-            const L = OL3625;
-            const pdf = new window.jspdf.jsPDF({ unit: 'in', format: 'letter', orientation: 'portrait' });
-            pdf.setFont('helvetica', 'normal');
-            pdf.setTextColor(51, 51, 51);
-            const captionWidth = L.label + L.gap;
-            ducks.forEach((d, i) => {
-                const slot = i % LABELS_PER_SHEET;
-                if (i && !slot) pdf.addPage();
-                const x = L.marginLeft + (slot % L.columns) * (L.label + L.gap);
-                const y = L.marginTop + Math.floor(slot / L.columns) * (L.label + L.gap);
+            labelsPDFBusy = true;
+            const buttons = document.querySelectorAll('[data-action^="pdf-"]');
+            buttons.forEach(b => { b.disabled = true; });
+            try {
+                // OL3625 is in inches; the PDF works in points
+                const L = { ...OL3625 };
+                ['marginTop', 'marginLeft', 'label', 'gap', 'qr'].forEach(k => { L[k] *= PT; });
+                const pdf = new window.jspdf.jsPDF({ unit: 'pt', format: 'letter', orientation: 'portrait', compress: true });
+                const duckForm = defineDuckForm(pdf);
+                const captionWidth = L.label + L.gap;
                 const inset = (L.label - L.qr) / 2;
-                pdf.addImage(qrDataURL(duckLink(d)), 'PNG', x + inset, y + inset, L.qr, L.qr, undefined, 'FAST');
+                const count = ducks.length;
+                const pages = Math.ceil(count / LABELS_PER_SHEET);
 
-                // Tiny "type · ID" caption in the gap under each label,
-                // shrunk (down to 3.5pt) and then trimmed to fit
-                const type = String(d.duck_type || '').replace(/\s+duck$/i, '').trim(); // "Golden Duck" -> "Golden"
-                let caption = [type, d.duck_id].filter(Boolean).join(' \u00b7 ');
-                let pt = 5;
-                pdf.setFontSize(pt);
-                while (pdf.getTextWidth(caption) > captionWidth && pt > 3.5) pdf.setFontSize(pt -= 0.25);
-                while (pdf.getTextWidth(caption) > captionWidth && caption.length > 1) caption = caption.slice(0, -2) + '\u2026';
-                pdf.text(caption, x + L.label / 2, y + L.label + L.gap / 2, { align: 'center', baseline: 'middle' });
-            });
-            pdf.save(filename);
+                // Work in small batches and let the browser breathe in between,
+                // so big runs don't freeze the page and can show progress
+                const BATCH = 100;
+                for (let i = 0; i < count; i++) {
+                    if (i && i % BATCH === 0) {
+                        snackbar(`Building labels\u2026 ${i.toLocaleString()} of ${count.toLocaleString()}`);
+                        await new Promise(resolve => setTimeout(resolve));
+                    }
+                    const d = ducks[i];
+                    const slot = i % LABELS_PER_SHEET;
+                    if (i && !slot) pdf.addPage();
+                    const x = L.marginLeft + (slot % L.columns) * (L.label + L.gap);
+                    const y = L.marginTop + Math.floor(slot / L.columns) * (L.label + L.gap);
+                    drawQRToPDF(pdf, duckForm, duckLink(d), x + inset, y + inset, L.qr);
 
-            const count = ducks.length;
-            const pages = Math.ceil(count / LABELS_PER_SHEET);
-            snackbar(`Downloaded ${count} label${count === 1 ? '' : 's'} on ${pages} OL3625 sheet${pages === 1 ? '' : 's'}` +
-                (skipped ? ` (skipped ${skipped} hologram code${skipped === 1 ? '' : 's'}).` : '.'));
+                    // Tiny "type · ID" caption in the gap under each label,
+                    // shrunk (down to 3.5pt) and then trimmed to fit
+                    const type = String(d.duck_type || '').replace(/\s+duck$/i, '').trim(); // "Golden Duck" -> "Golden"
+                    let caption = [type, d.duck_id].filter(Boolean).join(' \u00b7 ');
+                    let pt = 5;
+                    pdf.setFont('helvetica', 'normal');
+                    pdf.setTextColor(51, 51, 51);
+                    pdf.setFontSize(pt);
+                    while (pdf.getTextWidth(caption) > captionWidth && pt > 3.5) pdf.setFontSize(pt -= 0.25);
+                    while (pdf.getTextWidth(caption) > captionWidth && caption.length > 1) caption = caption.slice(0, -2) + '\u2026';
+                    pdf.text(caption, x + L.label / 2, y + L.label + L.gap / 2, { align: 'center', baseline: 'middle' });
+                }
+                if (count > BATCH) {
+                    snackbar('Saving PDF\u2026 this can take a few seconds');
+                    await new Promise(resolve => setTimeout(resolve));
+                }
+                pdf.save(filename);
+
+                snackbar(`Downloaded ${count.toLocaleString()} label${count === 1 ? '' : 's'} on ${pages.toLocaleString()} OL3625 sheet${pages === 1 ? '' : 's'}` +
+                    (skipped ? ` (skipped ${skipped.toLocaleString()} hologram code${skipped === 1 ? '' : 's'}).` : '.'));
+            } catch (err) {
+                console.error(err);
+                snackbar('Couldn\'t build the label PDF. Try fewer ducks at a time.');
+            } finally {
+                labelsPDFBusy = false;
+                buttons.forEach(b => { b.disabled = false; });
+            }
         }
 
         function duckCSV(ducks, filename) {
