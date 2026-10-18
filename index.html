@@ -1775,6 +1775,7 @@
             { x: 637, y: 994, width: 113, height: 113 },
         ];
         const FLYER_POSITIONS = ['Top left', 'Top right', 'Bottom left', 'Bottom right'];
+        const FLYER_MAX_BYTES = 95 * 1024 * 1024; // stay under 100 MB per file
         const PDF_LIB_SRC = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
 
         // pdf-lib is only needed here, so it loads the first time flyers are made
@@ -1807,6 +1808,53 @@
             while (pdf.getTextWidth(text) > maxWidth && pt > minPt) pdf.setFontSize(pt -= 0.25);
             while (pdf.getTextWidth(text) > maxWidth && text.length > 1) text = text.slice(0, -2) + '…';
             return text;
+        }
+
+        // Key pages for one file: which code is on which sheet and quarter.
+        // first = index of the file's first sheet, so sheet numbers run
+        // across all files.
+        function flyerKeyPDF(ducks, first, totalSheets, label, pageW, pageH) {
+            const orientation = pageW > pageH ? 'landscape' : 'portrait';
+            const pdf = new window.jspdf.jsPDF({ unit: 'pt', format: [pageW, pageH], orientation, compress: true });
+            const margin = 48, rowH = 16;
+            const cols = [
+                { label: 'Sheet', x: 0 }, { label: 'Quarter', x: 40 }, { label: 'Duck ID', x: 110 },
+                { label: 'Location', x: 190 }, { label: 'Type', x: 340 }, { label: 'Points', x: 420 }, { label: 'Code', x: 465 },
+            ];
+            const tableW = pageW - margin * 2;
+            const colWidth = c => (cols[c + 1] ? cols[c + 1].x : tableW) - cols[c].x - 6;
+            const sheets = Math.ceil(ducks.length / FLYER_SLOTS.length);
+            const title = ['Virtual code flyer key', label].filter(Boolean).join(' \u00b7 ');
+            const sheetRange = sheets === totalSheets ? `${sheets} sheet${sheets === 1 ? '' : 's'}`
+                : `sheets ${first + 1}\u2013${first + sheets} of ${totalSheets}`;
+            let keyY = Infinity, keyPages = 0;
+            ducks.forEach((d, i) => {
+                if (keyY + rowH > pageH - margin) {
+                    if (keyPages++) pdf.addPage([pageW, pageH], orientation);
+                    pdf.setTextColor(0, 0, 0);
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setFontSize(16);
+                    pdf.text(keyPages === 1 ? title : `${title} (continued)`, margin, margin, { baseline: 'top' });
+                    pdf.setFont('helvetica', 'normal');
+                    pdf.setFontSize(9);
+                    pdf.setTextColor(90, 90, 90);
+                    pdf.text(`${ducks.length} code${ducks.length === 1 ? '' : 's'} on ${sheetRange} \u00b7 ${today()} \u00b7 key pages aren't flyers, don't post them`, margin, margin + 22, { baseline: 'top' });
+                    keyY = margin + 48;
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setTextColor(0, 0, 0);
+                    cols.forEach(c => pdf.text(c.label, margin + c.x, keyY, { baseline: 'top' }));
+                    pdf.setDrawColor(0, 0, 0);
+                    pdf.line(margin, keyY + 13, pageW - margin, keyY + 13);
+                    keyY += rowH + 2;
+                }
+                const row = [String(first + Math.floor(i / FLYER_SLOTS.length) + 1), FLYER_POSITIONS[i % FLYER_SLOTS.length], d.duck_id,
+                    d.location || 'No location', d.duck_type, d.points, d.qr_code];
+                pdf.setFont('helvetica', 'normal');
+                pdf.setTextColor(0, 0, 0);
+                row.forEach((v, c) => pdf.text(fitText(pdf, String(v ?? ''), colWidth(c), 9, 6), margin + cols[c].x, keyY, { baseline: 'top' }));
+                keyY += rowH;
+            });
+            return pdf.output('arraybuffer');
         }
 
         async function downloadFlyersPDF(file) {
@@ -1850,64 +1898,65 @@
                     overlay.text(caption, bx + bw / 2, by + bh + 2, { align: 'center', baseline: 'top' });
                 });
 
-                // Key pages: which code is on which sheet and quarter
-                const margin = 48, rowH = 16;
-                const cols = [
-                    { label: 'Sheet', x: 0 }, { label: 'Quarter', x: 40 }, { label: 'Duck ID', x: 110 },
-                    { label: 'Location', x: 190 }, { label: 'Type', x: 340 }, { label: 'Points', x: 420 }, { label: 'Code', x: 465 },
-                ];
-                const tableW = pageW - margin * 2;
-                const colWidth = c => (cols[c + 1] ? cols[c + 1].x : tableW) - cols[c].x - 6;
-                let keyY = Infinity, keyPages = 0;
-                ducks.forEach((d, i) => {
-                    if (keyY + rowH > pageH - margin) {
-                        overlay.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait');
-                        keyPages++;
-                        overlay.setTextColor(0, 0, 0);
-                        overlay.setFont('helvetica', 'bold');
-                        overlay.setFontSize(16);
-                        overlay.text(keyPages === 1 ? 'Virtual code flyer key' : 'Virtual code flyer key (continued)', margin, margin, { baseline: 'top' });
-                        overlay.setFont('helvetica', 'normal');
-                        overlay.setFontSize(9);
-                        overlay.setTextColor(90, 90, 90);
-                        overlay.text(`${ducks.length} code${ducks.length === 1 ? '' : 's'} on ${sheets} sheet${sheets === 1 ? '' : 's'} · ${today()} · key pages aren't flyers, don't post them`, margin, margin + 22, { baseline: 'top' });
-                        keyY = margin + 48;
-                        overlay.setFont('helvetica', 'bold');
-                        overlay.setTextColor(0, 0, 0);
-                        cols.forEach(c => overlay.text(c.label, margin + c.x, keyY, { baseline: 'top' }));
-                        overlay.setDrawColor(0, 0, 0);
-                        overlay.line(margin, keyY + 13, pageW - margin, keyY + 13);
-                        keyY += rowH + 2;
-                    }
-                    const row = [String(Math.floor(i / FLYER_SLOTS.length) + 1), FLYER_POSITIONS[i % FLYER_SLOTS.length], d.duck_id,
-                        d.location || noLocation, d.duck_type, d.points, d.qr_code];
-                    overlay.setFont('helvetica', 'normal');
-                    overlay.setTextColor(0, 0, 0);
-                    row.forEach((v, c) => overlay.text(fitText(overlay, String(v ?? ''), colWidth(c), 9, 6), margin + cols[c].x, keyY, { baseline: 'top' }));
-                    keyY += rowH;
-                });
-
-                // Stack: template copy underneath, codes on top; key pages on blank paper
-                const out = await PDFDocument.create();
                 const overlayPDF = await PDFDocument.load(overlay.output('arraybuffer'));
-                const embedded = await out.embedPdf(overlayPDF, overlayPDF.getPageIndices());
-                for (let p = 0; p < embedded.length; p++) {
-                    let page;
-                    if (p < sheets) [page] = await out.copyPages(template, [0]);
-                    else page = out.addPage([pageW, pageH]);
-                    if (p < sheets) out.addPage(page);
-                    // The template page's own origin may not be 0,0
-                    const { x: ox, y: oy } = p < sheets ? page.getMediaBox() : { x: 0, y: 0 };
-                    page.drawPage(embedded[p], { x: ox, y: oy, width: pageW, height: pageH });
-                }
-                const bytes = await out.save();
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-                a.download = `duck-hunt-virtual-flyers-${today()}.pdf`;
-                a.click();
-                setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 
-                snackbar(`Downloaded ${ducks.length} virtual code${ducks.length === 1 ? '' : 's'} on ${sheets} flyer sheet${sheets === 1 ? '' : 's'}, plus the key.`);
+                // Each file holds the template once and every sheet reuses it,
+                // so sheets only add their codes. If a file would still pass
+                // FLYER_MAX_BYTES (big template artwork), it's split into
+                // parts, each with its own key; quality is never reduced.
+                async function buildPart(first, count, label) {
+                    const out = await PDFDocument.create();
+                    const background = await out.embedPage(template.getPage(0));
+                    const indices = Array.from({ length: count }, (_, k) => first + k);
+                    const codes = await out.embedPdf(overlayPDF, indices);
+                    codes.forEach(c => {
+                        const page = out.addPage([pageW, pageH]);
+                        page.drawPage(background, { x: 0, y: 0, width: pageW, height: pageH });
+                        page.drawPage(c, { x: 0, y: 0, width: pageW, height: pageH });
+                    });
+                    const partDucks = ducks.slice(first * FLYER_SLOTS.length, (first + count) * FLYER_SLOTS.length);
+                    const key = await PDFDocument.load(flyerKeyPDF(partDucks, first, sheets, label, pageW, pageH));
+                    (await out.copyPages(key, key.getPageIndices())).forEach(page => out.addPage(page));
+                    return out.save();
+                }
+
+                const parts = [];
+                let first = 0, perPart = sheets;
+                while (first < sheets) {
+                    const count = Math.min(perPart, sheets - first);
+                    snackbar(`Building flyers\u2026 sheet ${(first + 1).toLocaleString()} of ${sheets.toLocaleString()}`);
+                    await new Promise(resolve => setTimeout(resolve));
+                    const bytes = await buildPart(first, count, '');
+                    if (bytes.length > FLYER_MAX_BYTES && count > 1) {
+                        // Too big: aim for 90% of the limit and try again
+                        perPart = Math.max(1, Math.floor(count * FLYER_MAX_BYTES * 0.9 / bytes.length));
+                        continue;
+                    }
+                    parts.push({ first, count, bytes });
+                    first += count;
+                }
+
+                // Several files: rebuild each so its key says "Part 2 of 3"
+                for (let n = 0; parts.length > 1 && n < parts.length; n++) {
+                    const part = parts[n];
+                    part.bytes = await buildPart(part.first, part.count, `Part ${n + 1} of ${parts.length}`);
+                }
+
+                const base = `duck-hunt-virtual-flyers-${today()}`;
+                for (let n = 0; n < parts.length; n++) {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(new Blob([parts[n].bytes], { type: 'application/pdf' }));
+                    a.download = parts.length > 1 ? `${base}-part-${n + 1}-of-${parts.length}.pdf` : `${base}.pdf`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+                    // Browsers drop downloads fired all at once
+                    if (n < parts.length - 1) await new Promise(resolve => setTimeout(resolve, 800));
+                }
+
+                const mb = Math.max(...parts.map(p => p.bytes.length)) / 1e6;
+                snackbar(`Downloaded ${ducks.length} virtual code${ducks.length === 1 ? '' : 's'} on ${sheets} flyer sheet${sheets === 1 ? '' : 's'}` +
+                    (parts.length > 1 ? ` in ${parts.length} files (largest ${mb.toFixed(0)} MB).` : ` (${mb.toFixed(1)} MB).`) +
+                    (parts.length > 1 ? ' Allow multiple downloads if your browser asks.' : ''));
             } catch (err) {
                 console.error(err);
                 snackbar('Couldn\'t build the flyers. Make sure the template is a normal PDF.');
