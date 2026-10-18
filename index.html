@@ -1775,9 +1775,14 @@
             { x: 637, y: 994, width: 113, height: 113 },
         ];
         const FLYER_POSITIONS = ['Top left', 'Top right', 'Bottom left', 'Bottom right'];
-        // Fine-tune where the codes land, in points (72 = 1 inch); negative y
-        // moves them up. The measured boxes printed 1/8" low, so -9 lifts them.
+        // Only used if the yellow boxes can't be found: fine-tunes the measured
+        // FLYER_SLOTS in points (72 = 1 inch); negative y moves them up.
         const FLYER_NUDGE = { x: 0, y: -9 };
+        // Codes are inset this share of the yellow box on every side, so a
+        // yellow frame shows around each one
+        const FLYER_INSET = 0.06;
+        const PDFJS_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        const PDFJS_WORKER_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         const FLYER_MAX_BYTES = 95 * 1024 * 1024; // stay under 100 MB per file
         const PDF_LIB_SRC = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
 
@@ -1792,6 +1797,90 @@
                 document.head.appendChild(s);
             });
             return loadPDFLib.promise;
+        }
+
+        function loadPDFJS() {
+            if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+            loadPDFJS.promise = loadPDFJS.promise || new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = PDFJS_SRC;
+                s.onload = () => {
+                    window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
+                    resolve(window.pdfjsLib);
+                };
+                s.onerror = () => { loadPDFJS.promise = null; reject(new Error('pdf.js failed to load')); };
+                document.head.appendChild(s);
+            });
+            return loadPDFJS.promise;
+        }
+
+        // Find the template's yellow QR boxes: render page 1, group yellow
+        // pixels into blobs, and for each FLYER_SLOTS box take the nearest
+        // box-sized yellow blob. Returns boxes in points (top-left origin),
+        // with null for any slot that has no yellow box nearby.
+        async function findYellowBoxes(bytes, pageW, scale) {
+            const pdfjs = await loadPDFJS();
+            const doc = await pdfjs.getDocument({ data: bytes }).promise;
+            try {
+                const page = await doc.getPage(1);
+                const px = 3; // render pixels per point
+                const viewport = page.getViewport({ scale: px });
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.ceil(viewport.width);
+                canvas.height = Math.ceil(viewport.height);
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                await page.render({ canvasContext: ctx, viewport }).promise;
+                // pdf.js draws the visible (crop) box; line it up with the page size used for placing
+                const k = pageW / viewport.width * px;
+
+                const { width: w, height: h } = canvas;
+                const data = ctx.getImageData(0, 0, w, h).data;
+                const yellow = new Uint8Array(w * h);
+                for (let i = 0; i < w * h; i++) {
+                    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+                    yellow[i] = r > 170 && g > 140 && b < 140 && r - b > 70 && g - b > 50 ? 1 : 0;
+                }
+
+                // Flood-fill blobs, keeping each one's bounding box
+                const blobs = [];
+                const stack = [];
+                for (let start = 0; start < w * h; start++) {
+                    if (yellow[start] !== 1) continue;
+                    let minX = w, minY = h, maxX = 0, maxY = 0, area = 0;
+                    yellow[start] = 2;
+                    stack.push(start);
+                    while (stack.length) {
+                        const i = stack.pop();
+                        const x = i % w, y = (i - x) / w;
+                        area++;
+                        if (x < minX) minX = x; if (x > maxX) maxX = x;
+                        if (y < minY) minY = y; if (y > maxY) maxY = y;
+                        if (x > 0 && yellow[i - 1] === 1) { yellow[i - 1] = 2; stack.push(i - 1); }
+                        if (x < w - 1 && yellow[i + 1] === 1) { yellow[i + 1] = 2; stack.push(i + 1); }
+                        if (y > 0 && yellow[i - w] === 1) { yellow[i - w] = 2; stack.push(i - w); }
+                        if (y < h - 1 && yellow[i + w] === 1) { yellow[i + w] = 2; stack.push(i + w); }
+                    }
+                    const box = { x: minX / px * k, y: minY / px * k, width: (maxX - minX + 1) / px * k, height: (maxY - minY + 1) / px * k };
+                    // Box-shaped: at least 1/3" each way and not a long strip
+                    // (skips yellow text and lines)
+                    const ratio = box.width / box.height;
+                    if (box.width >= 24 && box.height >= 24 && ratio > 0.5 && ratio < 2) blobs.push(box);
+                }
+
+                return FLYER_SLOTS.map(slot => {
+                    const cx = (slot.x + slot.width / 2) * scale, cy = (slot.y + slot.height / 2) * scale;
+                    let best = null, bestDist = 72; // must be within an inch of the measured spot
+                    blobs.forEach(b => {
+                        const d = Math.hypot(b.x + b.width / 2 - cx, b.y + b.height / 2 - cy);
+                        if (d < bestDist) { best = b; bestDist = d; }
+                    });
+                    return best;
+                });
+            } finally {
+                doc.destroy();
+            }
         }
 
         // The button stashes the codes, then the template picker's change
@@ -1875,10 +1964,25 @@
             try {
                 snackbar('Building flyers…');
                 const { PDFDocument } = await loadPDFLib();
-                const template = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
+                const templateBytes = new Uint8Array(await file.arrayBuffer());
+                const template = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
                 const { width: pageW, height: pageH } = template.getPage(0).getSize();
                 const scale = pageW / FLYER_REFERENCE_WIDTH;
                 const sheets = Math.ceil(ducks.length / FLYER_SLOTS.length);
+
+                // Where each code goes: inside the template's yellow box,
+                // or the measured spot if that box can't be found
+                let found = [];
+                try {
+                    found = await findYellowBoxes(templateBytes.slice(), pageW, scale);
+                } catch (err) {
+                    console.error(err);
+                }
+                const boxes = FLYER_SLOTS.map((slot, n) => found[n] || {
+                    x: slot.x * scale + FLYER_NUDGE.x, y: slot.y * scale + FLYER_NUDGE.y,
+                    width: slot.width * scale, height: slot.height * scale,
+                });
+                const foundCount = found.filter(Boolean).length;
 
                 // Draw the codes (and the key) with the label PDF's vector QR
                 // code, on transparent pages the size of the template
@@ -1887,18 +1991,19 @@
                 ducks.forEach((d, i) => {
                     const slot = i % FLYER_SLOTS.length;
                     if (i && !slot) overlay.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait');
-                    const box = FLYER_SLOTS[slot];
-                    const bx = box.x * scale + FLYER_NUDGE.x, by = box.y * scale + FLYER_NUDGE.y, bw = box.width * scale, bh = box.height * scale;
-                    const size = Math.min(bw, bh);
-                    const x = bx + (bw - size) / 2, y = by + (bh - size) / 2;
+                    const box = boxes[slot];
+                    const size = Math.min(box.width, box.height) * (1 - FLYER_INSET * 2);
+                    const x = box.x + (box.width - size) / 2, y = box.y + (box.height - size) / 2;
                     overlay.setFillColor(255, 255, 255);
                     overlay.rect(x, y, size, size, 'F');
                     drawQRToPDF(overlay, duckForm, duckLink(d), x, y, size);
 
+                    // "ID · location" in the code's white top margin, so
+                    // nothing prints outside the yellow box
                     overlay.setFont('helvetica', 'normal');
                     overlay.setTextColor(51, 51, 51);
-                    const caption = fitText(overlay, `${d.duck_id} · ${d.location || noLocation}`, bw + 40, 5, 3.5);
-                    overlay.text(caption, bx + bw / 2, by + bh + 2, { align: 'center', baseline: 'top' });
+                    const caption = fitText(overlay, `${d.duck_id} · ${d.location || noLocation}`, size * 0.9, size * 0.05, 2.5);
+                    overlay.text(caption, x + size / 2, y + size * 0.045, { align: 'center', baseline: 'middle' });
                 });
 
                 const overlayPDF = await PDFDocument.load(overlay.output('arraybuffer'));
@@ -1959,7 +2064,8 @@
                 const mb = Math.max(...parts.map(p => p.bytes.length)) / 1e6;
                 snackbar(`Downloaded ${ducks.length} virtual code${ducks.length === 1 ? '' : 's'} on ${sheets} flyer sheet${sheets === 1 ? '' : 's'}` +
                     (parts.length > 1 ? ` in ${parts.length} files (largest ${mb.toFixed(0)} MB).` : ` (${mb.toFixed(1)} MB).`) +
-                    (parts.length > 1 ? ' Allow multiple downloads if your browser asks.' : ''));
+                    (parts.length > 1 ? ' Allow multiple downloads if your browser asks.' : '') +
+                    (foundCount === FLYER_SLOTS.length ? '' : ` Only found ${foundCount} of ${FLYER_SLOTS.length} yellow boxes; the rest used the saved positions.`));
             } catch (err) {
                 console.error(err);
                 snackbar('Couldn\'t build the flyers. Make sure the template is a normal PDF.');
