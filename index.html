@@ -1775,6 +1775,9 @@
             { x: 637, y: 994, width: 113, height: 113 },
         ];
         const FLYER_POSITIONS = ['Top left', 'Top right', 'Bottom left', 'Bottom right'];
+        // Fine-tune where the codes land, in points (72 = 1 inch); negative y
+        // moves them up. The measured boxes printed 1/8" low, so -9 lifts them.
+        const FLYER_NUDGE = { x: 0, y: -9 };
         const FLYER_MAX_BYTES = 95 * 1024 * 1024; // stay under 100 MB per file
         const PDF_LIB_SRC = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
 
@@ -1885,7 +1888,7 @@
                     const slot = i % FLYER_SLOTS.length;
                     if (i && !slot) overlay.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait');
                     const box = FLYER_SLOTS[slot];
-                    const bx = box.x * scale, by = box.y * scale, bw = box.width * scale, bh = box.height * scale;
+                    const bx = box.x * scale + FLYER_NUDGE.x, by = box.y * scale + FLYER_NUDGE.y, bw = box.width * scale, bh = box.height * scale;
                     const size = Math.min(bw, bh);
                     const x = bx + (bw - size) / 2, y = by + (bh - size) / 2;
                     overlay.setFillColor(255, 255, 255);
