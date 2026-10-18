@@ -433,6 +433,13 @@
         .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
         .qr-box { width: 240px; margin: 0 auto 12px; padding: 12px; background: #fff; border-radius: var(--radius-lg); }
         .qr-box canvas { width: 100%; height: auto; display: block; }
+        #flyer-dialog { width: min(760px, calc(100vw - 32px)); }
+        .flyer-preview-wrap { max-height: 58vh; overflow: auto; border-radius: var(--radius-lg); border: 1px solid var(--line); background: #fff; }
+        .flyer-preview-wrap canvas { width: 100%; height: auto; display: block; }
+        .flyer-preview-wrap.zoomed canvas { width: 250%; }
+        .flyer-nudge { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+        .flyer-nudge .btn { min-width: 40px; justify-content: center; }
+        .flyer-nudge span { color: var(--text-muted); font-size: 13px; }
         .preview { background: var(--inset-bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 12px 16px; color: var(--text-muted); font-size: 13px; }
 
         /* ── TOAST ── */
@@ -965,6 +972,27 @@
 
     <div id="snackbar" class="snackbar"></div>
     <input type="file" id="flyer-template" accept="application/pdf,.pdf" hidden>
+
+    <!-- Flyer preview: line the codes up with the template before downloading -->
+    <dialog id="flyer-dialog">
+        <h2>Line up the flyer codes</h2>
+        <p id="flyer-found"></p>
+        <div id="flyer-preview-wrap" class="flyer-preview-wrap"><canvas id="flyer-preview"></canvas></div>
+        <div class="flyer-nudge">
+            <button type="button" class="btn btn-sm" data-action="flyer-nudge" data-dx="0" data-dy="-1" aria-label="Move codes up">&uarr;</button>
+            <button type="button" class="btn btn-sm" data-action="flyer-nudge" data-dx="0" data-dy="1" aria-label="Move codes down">&darr;</button>
+            <button type="button" class="btn btn-sm" data-action="flyer-nudge" data-dx="-1" data-dy="0" aria-label="Move codes left">&larr;</button>
+            <button type="button" class="btn btn-sm" data-action="flyer-nudge" data-dx="1" data-dy="0" aria-label="Move codes right">&rarr;</button>
+            <button type="button" class="link" data-action="flyer-reset">Reset</button>
+            <span id="flyer-nudge-text"></span>
+            <span style="flex:1"></span>
+            <button type="button" class="btn btn-sm" data-action="flyer-zoom">Zoom</button>
+        </div>
+        <div class="dialog-actions">
+            <button type="button" class="btn" data-action="close-dialog">Cancel</button>
+            <button type="button" class="btn btn-primary" data-action="flyer-build">Download flyers</button>
+        </div>
+    </dialog>
 
     <script>
         // ---------- STUDENT SITE ----------
@@ -1816,8 +1844,9 @@
 
         // Find the template's yellow QR boxes: render page 1, group yellow
         // pixels into blobs, and for each FLYER_SLOTS box take the nearest
-        // box-sized yellow blob. Returns boxes in points (top-left origin),
-        // with null for any slot that has no yellow box nearby.
+        // box-sized yellow blob. Returns { boxes, canvas }: boxes in points
+        // (top-left of the visible page), null for any slot with no yellow
+        // box nearby, and the render for the preview.
         async function findYellowBoxes(bytes, pageW, scale) {
             const pdfjs = await loadPDFJS();
             const doc = await pdfjs.getDocument({ data: bytes }).promise;
@@ -1832,7 +1861,7 @@
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 await page.render({ canvasContext: ctx, viewport }).promise;
-                // pdf.js draws the visible (crop) box; line it up with the page size used for placing
+                // pdf.js draws the visible (crop) box, the same frame the flyer uses
                 const k = pageW / viewport.width * px;
 
                 const { width: w, height: h } = canvas;
@@ -1869,7 +1898,7 @@
                     if (box.width >= 24 && box.height >= 24 && ratio > 0.5 && ratio < 2) blobs.push(box);
                 }
 
-                return FLYER_SLOTS.map(slot => {
+                const boxes = FLYER_SLOTS.map(slot => {
                     const cx = (slot.x + slot.width / 2) * scale, cy = (slot.y + slot.height / 2) * scale;
                     let best = null, bestDist = 72; // must be within an inch of the measured spot
                     blobs.forEach(b => {
@@ -1878,6 +1907,7 @@
                     });
                     return best;
                 });
+                return { boxes, canvas };
             } finally {
                 doc.destroy();
             }
@@ -1949,6 +1979,21 @@
             return pdf.output('arraybuffer');
         }
 
+        // The flyer run waiting in the preview dialog
+        let flyerJob = null;
+        const FLYER_NUDGE_KEY = 'duckadmin.flyerNudge';
+        const FLYER_NUDGE_STEP = 72 / 32; // each arrow click moves the codes 1/32"
+
+        // The arrows' adjustment is remembered for next time (same template)
+        function savedFlyerNudge() {
+            try {
+                const n = JSON.parse(localStorage.getItem(FLYER_NUDGE_KEY));
+                if (n && Number.isFinite(n.x) && Number.isFinite(n.y)) return n;
+            } catch (e) {}
+            return { x: 0, y: 0 };
+        }
+
+        // Read the template, find its yellow boxes, then show the preview
         async function downloadFlyersPDF(file) {
             const ducks = (flyerDucks || []).slice();
             flyerDucks = null;
@@ -1957,24 +2002,26 @@
             if (!window.jspdf) return snackbar('PDF library failed to load. Reload and try again.');
 
             // Same location together, so each stack of flyers goes to one place
-            const noLocation = 'No location';
-            ducks.sort((a, b) => (a.location || '￿').localeCompare(b.location || '￿') ||
+            ducks.sort((a, b) => (a.location || '\uffff').localeCompare(b.location || '\uffff') ||
                 String(a.duck_id).localeCompare(String(b.duck_id), undefined, { numeric: true }));
 
             try {
-                snackbar('Building flyers…');
+                snackbar('Reading template\u2026');
                 const { PDFDocument } = await loadPDFLib();
                 const templateBytes = new Uint8Array(await file.arrayBuffer());
                 const template = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
-                const { width: pageW, height: pageH } = template.getPage(0).getSize();
+                // Work in the page's visible area (crop box), which is what
+                // viewers and printers show; print exports often have a bigger
+                // page behind it for bleed
+                const crop = template.getPage(0).getCropBox();
+                const pageW = crop.width, pageH = crop.height;
                 const scale = pageW / FLYER_REFERENCE_WIDTH;
-                const sheets = Math.ceil(ducks.length / FLYER_SLOTS.length);
 
                 // Where each code goes: inside the template's yellow box,
                 // or the measured spot if that box can't be found
-                let found = [];
+                let found = [], preview = null;
                 try {
-                    found = await findYellowBoxes(templateBytes.slice(), pageW, scale);
+                    ({ boxes: found, canvas: preview } = await findYellowBoxes(templateBytes.slice(), pageW, scale));
                 } catch (err) {
                     console.error(err);
                 }
@@ -1982,7 +2029,83 @@
                     x: slot.x * scale + FLYER_NUDGE.x, y: slot.y * scale + FLYER_NUDGE.y,
                     width: slot.width * scale, height: slot.height * scale,
                 });
-                const foundCount = found.filter(Boolean).length;
+
+                flyerJob = {
+                    ducks, template, crop, pageW, pageH, boxes, preview,
+                    foundCount: found.filter(Boolean).length,
+                    nudge: savedFlyerNudge(),
+                    qrs: ducks.slice(0, FLYER_SLOTS.length).map(d => duckQRCanvas(duckLink(d), 600)),
+                };
+                $('flyer-preview-wrap').classList.remove('zoomed');
+                $('flyer-dialog').showModal();
+                drawFlyerPreview();
+            } catch (err) {
+                console.error(err);
+                snackbar('Couldn\'t read the template. Make sure it\'s a normal PDF.');
+            }
+        }
+
+        // Each code's square on the page in points: centered in its box,
+        // inset a little, then moved by the arrows' nudge
+        function flyerSquares(job) {
+            return job.boxes.map(b => {
+                const size = Math.min(b.width, b.height) * (1 - FLYER_INSET * 2);
+                return { x: b.x + (b.width - size) / 2 + job.nudge.x, y: b.y + (b.height - size) / 2 + job.nudge.y, size };
+            });
+        }
+
+        function describeNudge({ x, y }) {
+            const part = (v, neg, pos) => {
+                const n = Math.round(Math.abs(v) / FLYER_NUDGE_STEP);
+                return n ? `${n}/32\u2033 ${v < 0 ? neg : pos}` : '';
+            };
+            return [part(y, 'up', 'down'), part(x, 'left', 'right')].filter(Boolean).join(', ') || 'Not moved';
+        }
+
+        // The template with the first sheet's real codes drawn on it
+        function drawFlyerPreview() {
+            const job = flyerJob;
+            if (!job) return;
+            const canvas = $('flyer-preview');
+            canvas.width = 1600;
+            canvas.height = Math.round(1600 * job.pageH / job.pageW);
+            const k = canvas.width / job.pageW;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (job.preview) ctx.drawImage(job.preview, 0, 0, canvas.width, canvas.height);
+            flyerSquares(job).forEach((sq, n) => {
+                if (job.qrs[n]) ctx.drawImage(job.qrs[n], sq.x * k, sq.y * k, sq.size * k, sq.size * k);
+            });
+            const total = FLYER_SLOTS.length;
+            $('flyer-found').textContent = (!job.preview ? 'Couldn\'t render the template here, so only the codes show. '
+                : job.foundCount === total ? `Found all ${total} yellow boxes. `
+                : `Found ${job.foundCount} of ${total} yellow boxes; the others use the saved positions. `) +
+                'Use the arrows if the codes need to move, then download.';
+            $('flyer-nudge-text').textContent = describeNudge(job.nudge);
+        }
+
+        function nudgeFlyers(dx, dy) {
+            if (!flyerJob) return;
+            if (dx === null) flyerJob.nudge = { x: 0, y: 0 };
+            else flyerJob.nudge = { x: flyerJob.nudge.x + dx * FLYER_NUDGE_STEP, y: flyerJob.nudge.y + dy * FLYER_NUDGE_STEP };
+            try { localStorage.setItem(FLYER_NUDGE_KEY, JSON.stringify(flyerJob.nudge)); } catch (e) {}
+            drawFlyerPreview();
+        }
+
+        async function buildFlyers() {
+            const job = flyerJob;
+            if (!job) return;
+            flyerJob = null;
+            $('flyer-dialog').close();
+            const { ducks, template, crop, pageW, pageH, foundCount } = job;
+            const noLocation = 'No location';
+            const squares = flyerSquares(job);
+            const sheets = Math.ceil(ducks.length / FLYER_SLOTS.length);
+
+            try {
+                snackbar('Building flyers\u2026');
+                const { PDFDocument } = await loadPDFLib();
 
                 // Draw the codes (and the key) with the label PDF's vector QR
                 // code, on transparent pages the size of the template
@@ -1991,9 +2114,7 @@
                 ducks.forEach((d, i) => {
                     const slot = i % FLYER_SLOTS.length;
                     if (i && !slot) overlay.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait');
-                    const box = boxes[slot];
-                    const size = Math.min(box.width, box.height) * (1 - FLYER_INSET * 2);
-                    const x = box.x + (box.width - size) / 2, y = box.y + (box.height - size) / 2;
+                    const { x, y, size } = squares[slot];
                     overlay.setFillColor(255, 255, 255);
                     overlay.rect(x, y, size, size, 'F');
                     drawQRToPDF(overlay, duckForm, duckLink(d), x, y, size);
@@ -2014,7 +2135,10 @@
                 // parts, each with its own key; quality is never reduced.
                 async function buildPart(first, count, label) {
                     const out = await PDFDocument.create();
-                    const background = await out.embedPage(template.getPage(0));
+                    // Only the visible (crop) area, matching the preview
+                    const background = await out.embedPage(template.getPage(0), {
+                        left: crop.x, bottom: crop.y, right: crop.x + crop.width, top: crop.y + crop.height,
+                    });
                     const indices = Array.from({ length: count }, (_, k) => first + k);
                     const codes = await out.embedPdf(overlayPDF, indices);
                     codes.forEach(c => {
@@ -2065,7 +2189,7 @@
                 snackbar(`Downloaded ${ducks.length} virtual code${ducks.length === 1 ? '' : 's'} on ${sheets} flyer sheet${sheets === 1 ? '' : 's'}` +
                     (parts.length > 1 ? ` in ${parts.length} files (largest ${mb.toFixed(0)} MB).` : ` (${mb.toFixed(1)} MB).`) +
                     (parts.length > 1 ? ' Allow multiple downloads if your browser asks.' : '') +
-                    (foundCount === FLYER_SLOTS.length ? '' : ` Only found ${foundCount} of ${FLYER_SLOTS.length} yellow boxes; the rest used the saved positions.`));
+                    (foundCount === FLYER_SLOTS.length ? '' : ` Only found ${foundCount} of ${FLYER_SLOTS.length} yellow boxes.`));
             } catch (err) {
                 console.error(err);
                 snackbar('Couldn\'t build the flyers. Make sure the template is a normal PDF.');
@@ -2145,6 +2269,10 @@
                 case 'pdf-selected': return downloadLabelsPDF(visibleDucks().filter(d => selected.has(d.duck_id)));
                 case 'flyer-all': return pickFlyerTemplate(visibleDucks());
                 case 'flyer-selected': return pickFlyerTemplate(visibleDucks().filter(d => selected.has(d.duck_id)));
+                case 'flyer-nudge': return nudgeFlyers(Number(el.dataset.dx), Number(el.dataset.dy));
+                case 'flyer-reset': return nudgeFlyers(null);
+                case 'flyer-zoom': return $('flyer-preview-wrap').classList.toggle('zoomed');
+                case 'flyer-build': return buildFlyers();
                 case 'download-ducks': return duckCSV(visibleDucks(), `duck-hunt-ducks-${today()}.csv`);
                 case 'download-selected': return duckCSV(visibleDucks().filter(d => selected.has(d.duck_id)), `duck-hunt-ducks-${today()}.csv`);
                 case 'clear-selection': selected.clear(); return render();
@@ -2438,6 +2566,13 @@
         ['duck-filter-type', 'duck-filter-status', 'duck-filter-location'].forEach(id =>
             $(id).addEventListener('change', () => { duckPage = 0; renderDucks(); }));
         $('flyer-template').addEventListener('change', event => downloadFlyersPDF(event.target.files[0]));
+        // Arrow keys nudge the codes while the flyer preview is open
+        $('flyer-dialog').addEventListener('keydown', event => {
+            const move = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[event.key];
+            if (!move) return;
+            event.preventDefault();
+            nudgeFlyers(...move);
+        });
         $('duck-sort').addEventListener('change', () => {
             const [key, dir] = $('duck-sort').value.split(':');
             if (!key) return;
