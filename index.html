@@ -1008,9 +1008,18 @@
 
         const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-        async function rpc(name, params) {
-            const { data, error } = await db.rpc(name, params || {});
-            if (error) throw error;
+        // timeoutMs gives up on a call instead of leaving the page hanging
+        // when the database is busy.
+        async function rpc(name, params, timeoutMs) {
+            let query = db.rpc(name, params || {});
+            if (timeoutMs && AbortSignal.timeout) query = query.abortSignal(AbortSignal.timeout(timeoutMs));
+            const { data, error } = await query;
+            if (error) {
+                if (/abort|timeout|timed out/i.test((error.name || '') + ' ' + (error.message || ''))) {
+                    throw new Error('The server took too long to answer. Try again.');
+                }
+                throw error;
+            }
             return data;
         }
 
@@ -1029,6 +1038,13 @@
         let pollTimer = null;
         let seenScanIds = null;
         let renderPending = false;
+        // admin_overview returns every duck and rescuer, so it's the heaviest
+        // call there is. Run one at a time, and skip it while the data isn't on
+        // screen (scanner tab, hidden tab): with several admins scanning, a
+        // reload per scan per admin is what slowed scans and sign-ins to a crawl.
+        let loading = null;
+        let loadAgain = false;
+        let dataStale = false;
 
         const $ = id => document.getElementById(id);
 
@@ -1122,8 +1138,14 @@
 
         async function enterAdmin(email) {
             try {
-                if (!(await rpc('is_admin'))) {
-                    await db.auth.signOut();
+                let admin;
+                try {
+                    admin = await rpc('is_admin', null, 15000);
+                } catch (err) {
+                    admin = await rpc('is_admin', null, 15000); // one retry if the database was busy
+                }
+                if (!admin) {
+                    await db.auth.signOut({ scope: 'local' });
                     return showLogin('This account isn\'t an admin.');
                 }
             } catch (err) {
@@ -1156,14 +1178,34 @@
             seenScanIds = null;
             selected.clear();
             await stopAdminScanner();
-            await db.auth.signOut();
+            // Everyone shares the admin login, so only end this device's
+            // session. The default ('global') signs every device out.
+            await db.auth.signOut({ scope: 'local' });
             showLogin();
         }
 
         // ---------- DATA ----------
-        async function load() {
+        // Calls made during a load share it, plus one more pass so they see
+        // their own change.
+        function load() {
+            if (loading) {
+                loadAgain = true;
+                return loading;
+            }
+            loading = (async () => {
+                do {
+                    loadAgain = false;
+                    dataStale = false;
+                    await loadNow();
+                } while (loadAgain);
+                loading = null;
+            })();
+            return loading;
+        }
+
+        async function loadNow() {
             try {
-                Object.assign(state, await rpc('admin_overview'));
+                Object.assign(state, await rpc('admin_overview', null, 30000));
                 // Forget selections for ducks that no longer exist
                 const ids = new Set(state.ducks.map(d => d.duck_id));
                 [...selected].forEach(id => { if (!ids.has(id)) selected.delete(id); });
@@ -1174,9 +1216,17 @@
         }
 
         function scheduleLoad() {
+            if (activeTab === 'scanner' || document.hidden) {
+                dataStale = true;
+                return;
+            }
             clearTimeout(reloadTimer);
-            reloadTimer = setTimeout(load, 300);
+            reloadTimer = setTimeout(load, 1000);
         }
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && dataStale && channel) scheduleLoad();
+        });
 
         function setLive(on, label) {
             $('live').classList.toggle('on', on);
@@ -1194,7 +1244,7 @@
                 else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) setLive(false, 'Offline');
             });
             clearInterval(pollTimer);
-            pollTimer = setInterval(() => { if (!document.hidden) load(); }, 30000);
+            pollTimer = setInterval(() => { if (!document.hidden && activeTab !== 'scanner') load(); }, 30000);
         }
 
         // ---------- RENDERING ----------
@@ -1453,7 +1503,10 @@
             activeTab = tab;
             document.querySelectorAll('[data-action="tab"]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
             ['ducks', 'rescuers', 'scans', 'scanner', 'messages', 'reports'].forEach(t => { $('panel-' + t).hidden = t !== tab; });
-            if (tab !== 'scanner') stopAdminScanner();
+            if (tab !== 'scanner') {
+                stopAdminScanner();
+                if (dataStale && channel) scheduleLoad();
+            }
         }
 
         // ---------- DUCK DIALOGS ----------
@@ -2769,10 +2822,11 @@
             scanBusy = true;
             lastScan.code = code;
             try {
-                const r = await rpc('admin_scan_duck', { p_qr_code: code, p_mode: scanMode, p_location: scanMode === 'locate' ? location : null });
+                const r = await rpc('admin_scan_duck', { p_qr_code: code, p_mode: scanMode, p_location: scanMode === 'locate' ? location : null }, 12000);
                 const [kind, message] = scanMessage(r, code);
                 showScanResult(kind, message);
-                if (r.status === 'activated' || r.status === 'located') scheduleLoad();
+                // Tables refresh when you leave the scanner, not after every scan
+                if (r.status === 'activated' || r.status === 'located') dataStale = true;
             } catch (err) {
                 showScanResult('err', err.message || 'Couldn\'t save that scan.');
             } finally {
