@@ -1145,7 +1145,7 @@
                     admin = await rpc('is_admin', null, 15000); // one retry if the database was busy
                 }
                 if (!admin) {
-                    await db.auth.signOut();
+                    await db.auth.signOut({ scope: 'local' });
                     return showLogin('This account isn\'t an admin.');
                 }
             } catch (err) {
@@ -1178,7 +1178,9 @@
             seenScanIds = null;
             selected.clear();
             await stopAdminScanner();
-            await db.auth.signOut();
+            // Everyone shares the admin login, so only end this device's
+            // session. The default ('global') signs every device out.
+            await db.auth.signOut({ scope: 'local' });
             showLogin();
         }
 
