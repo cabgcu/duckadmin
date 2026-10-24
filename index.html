@@ -920,7 +920,7 @@
     <dialog id="rescuer-dialog">
         <form id="rescuer-form" method="dialog">
             <h2>Edit rescuer</h2>
-            <div class="field"><label>Student ID</label><input id="f-student-id" type="text" readonly></div>
+            <div class="field"><label for="f-student-id">Student ID</label><input id="f-student-id" type="text" required autocomplete="off" spellcheck="false"></div>
             <div class="row">
                 <div class="field"><label for="f-first">First name</label><input id="f-first" type="text" required></div>
                 <div class="field"><label for="f-last">Last name</label><input id="f-last" type="text"></div>
@@ -2267,6 +2267,7 @@
                 case 'edit-rescuer': {
                     const p = findPlayer(id);
                     $('f-student-id').value = p.student_id;
+                    $('f-student-id').dataset.original = p.student_id;
                     $('f-first').value = p.first_name;
                     $('f-last').value = p.last_name;
                     $('f-email').value = p.email || '';
@@ -2938,9 +2939,21 @@
         $('rescuer-form').addEventListener('submit', event => {
             event.preventDefault();
             busy(event.submitter, async () => {
+                const originalId = $('f-student-id').dataset.original;
+                const studentId = $('f-student-id').value.trim();
+                if (!studentId) return showError('rescuer-error', 'Enter a student ID.');
+                if (studentId !== originalId && findPlayer(studentId)) {
+                    return showError('rescuer-error', `Another rescuer already has student ID ${studentId}.`);
+                }
                 try {
+                    // A new ID moves the rescuer's scans and reports along
+                    // with them, so do that before saving the other fields.
+                    if (studentId !== originalId) {
+                        await rpc('admin_change_student_id', { p_old_student_id: originalId, p_new_student_id: studentId });
+                        $('f-student-id').dataset.original = studentId;
+                    }
                     await rpc('admin_save_player', {
-                        p_student_id: $('f-student-id').value,
+                        p_student_id: studentId,
                         p_first_name: $('f-first').value,
                         p_last_name: $('f-last').value,
                         p_email: $('f-email').value,
