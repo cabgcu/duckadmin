@@ -549,6 +549,7 @@
                 <div class="header-status">
                     <span id="live" class="live"><i></i><span id="live-label">Connecting</span></span>
                     <button type="button" id="hunt-toggle" class="hunt-toggle" data-action="toggle-hunt" title="Turn Duck Hunt on or off" hidden><i></i><span id="hunt-label">Hunt on</span></button>
+                    <button type="button" id="locations-toggle" class="hunt-toggle" data-action="toggle-locations" title="Show or hide duck locations from rescuers" hidden><i></i><span id="locations-label">Locations shown</span></button>
                     <span id="who" class="who"></span>
                 </div>
                 <div class="header-actions">
@@ -1223,7 +1224,12 @@
 
         async function loadNow() {
             try {
-                Object.assign(state, await rpc('admin_overview', null, 30000));
+                const [overview, hidden] = await Promise.all([
+                    rpc('admin_overview', null, 30000),
+                    // null until sql/hide-locations.sql has been run
+                    rpc('admin_get_locations_hidden', null, 30000).catch(() => null)
+                ]);
+                Object.assign(state, overview, { locations_hidden: hidden });
                 // Forget selections for ducks that no longer exist
                 const ids = new Set(state.ducks.map(d => d.duck_id));
                 [...selected].forEach(id => { if (!ids.has(id)) selected.delete(id); });
@@ -1254,7 +1260,7 @@
         function subscribe() {
             if (channel) db.removeChannel(channel);
             channel = db.channel('admin-live');
-            ['duck_log', 'players', 'ducks', 'duck_locations', 'announcements', 'game_settings', 'code_reports'].forEach(table => {
+            ['duck_log', 'players', 'ducks', 'duck_locations', 'announcements', 'game_settings', 'location_settings', 'code_reports'].forEach(table => {
                 channel.on('postgres_changes', { event: '*', schema: 'public', table }, scheduleLoad);
             });
             channel.subscribe(status => {
@@ -1306,8 +1312,17 @@
             $('hunt-label').textContent = on ? 'Hunt on' : 'Hunt off';
         }
 
+        function renderLocationsToggle() {
+            const toggle = $('locations-toggle');
+            toggle.hidden = state.locations_hidden == null;
+            toggle.classList.toggle('on', !state.locations_hidden);
+            toggle.setAttribute('aria-pressed', !state.locations_hidden);
+            $('locations-label').textContent = state.locations_hidden ? 'Locations hidden' : 'Locations shown';
+        }
+
         function renderSummary() {
             renderHuntToggle();
+            renderLocationsToggle();
             const claimed = state.ducks.filter(d => d.claimed).length;
             const inactive = state.ducks.filter(d => !d.claimed && !d.active).length;
             const points = state.players.reduce((sum, p) => sum + p.points, 0);
@@ -2348,6 +2363,20 @@
                     return busy(el, async () => {
                         await rpc('admin_set_hunt_open', { p_open: turnOn });
                         snackbar(turnOn ? 'Duck Hunt is on.' : 'Duck Hunt is off.');
+                        await load();
+                    });
+                }
+
+                case 'toggle-locations': {
+                    const hide = !state.locations_hidden;
+                    const ok = await confirmDialog(hide ? 'Hide duck locations?' : 'Reveal duck locations?',
+                        hide ? 'Rescuers still see how many ducks are out, but not where. You can still tag and see locations here.'
+                             : 'Rescuers see how many ducks are still out at each location again (Rebel Coordinates).',
+                        hide ? 'Hide' : 'Reveal', false);
+                    if (!ok) return;
+                    return busy(el, async () => {
+                        await rpc('admin_set_locations_hidden', { p_hidden: hide });
+                        snackbar(hide ? 'Duck locations are hidden from rescuers.' : 'Duck locations are visible to rescuers.');
                         await load();
                     });
                 }
