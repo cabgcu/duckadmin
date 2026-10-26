@@ -1,9 +1,9 @@
 -- Hide duck locations from rescuers (e.g. the first week of the hunt).
 -- Run once in the Supabase SQL editor. Safe to run again.
 --
--- While locations are hidden, get_rebel_coordinates only returns how many
--- ducks are still out, with no location names, so they can't be read from
--- the app or by calling the API directly. Admins flip it from the
+-- While locations are hidden, get_rebel_coordinates returns no locations and
+-- no duck counts, just a "hidden" marker, so neither can be read from the
+-- app or by calling the API directly. Admins flip it from the
 -- "Locations" switch in the admin header.
 
 create table if not exists public.location_settings (
@@ -54,7 +54,7 @@ grant execute on function public.admin_get_locations_hidden() to authenticated;
 grant execute on function public.admin_set_locations_hidden(boolean) to authenticated;
 
 -- Move the existing get_rebel_coordinates aside (first run only) and put a
--- wrapper in its place that strips the location names while they're hidden.
+-- wrapper in its place that returns nothing but a marker while they're hidden.
 do $$
 declare
     returns_set boolean;
@@ -76,14 +76,10 @@ begin
     execute format($f$
         create function public.get_rebel_coordinates()
         returns jsonb language plpgsql stable security definer set search_path = public, private as $body$
-        declare
-            all_rows jsonb := coalesce(%s, '[]'::jsonb);
-            total    bigint;
         begin
-            if not private.locations_hidden() then return all_rows; end if;
-            select coalesce(sum((e->>'ducks')::bigint), 0) into total from jsonb_array_elements(all_rows) e;
-            if total = 0 then return '[]'::jsonb; end if;
-            return jsonb_build_array(jsonb_build_object('location', null, 'ducks', total, 'hidden', true));
+            -- Not even an empty list: that would give away "every duck is rescued"
+            if private.locations_hidden() then return '[{"hidden": true}]'::jsonb; end if;
+            return coalesce(%s, '[]'::jsonb);
         end $body$;
     $f$, source);
 end $$;

@@ -2370,8 +2370,8 @@
                 case 'toggle-locations': {
                     const hide = !state.locations_hidden;
                     const ok = await confirmDialog(hide ? 'Hide duck locations?' : 'Reveal duck locations?',
-                        hide ? 'Rescuers still see how many ducks are out, but not where. You can still tag and see locations here.'
-                             : 'Rescuers see how many ducks are still out at each location again (Rebel Coordinates).',
+                        hide ? 'Rescuers won\'t see where ducks are or how many are left. You can still tag and see locations here.'
+                             : 'Rescuers see where ducks are and how many are still out at each location again (Rebel Coordinates).',
                         hide ? 'Hide' : 'Reveal', false);
                     if (!ok) return;
                     return busy(el, async () => {
