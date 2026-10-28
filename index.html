@@ -244,10 +244,12 @@
         .progress-ring .hole b { font-size: 22px; font-weight: 700; }
         .progress-ring .hole span { font-size: 11px; color: var(--text-muted); }
 
-        .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 24px; padding-top: 22px; margin-top: 22px; border-top: 1px solid var(--line); }
+        .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 24px; padding-top: 22px; margin-top: 22px; border-top: 1px solid var(--line); }
         .stat-grid .k { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
         .stat-grid .v { display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 700; }
         .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+        .dot.pulse { animation: dot-pulse 2s ease-in-out infinite; }
+        @keyframes dot-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55); } 50% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); } }
 
         /* ── TABLE SECTION ── */
         .table-container { background: var(--card-bg); border: 1px solid var(--line); border-radius: var(--radius-xl); overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.15); }
@@ -579,6 +581,7 @@
                 <div class="progress-ring" id="claim-ring"><div class="hole"><b id="ring-left">0</b><span>to find</span></div></div>
             </div>
             <div class="stat-grid">
+                <div title="Players with the Duck Hunt site open and signed in right now"><div class="k">Online now</div><div class="v"><span class="dot pulse" style="background:#22c55e"></span><span id="stat-online">–</span></div></div>
                 <div><div class="k">Active</div><div class="v"><span class="dot" style="background:var(--warning-text)"></span><span id="stat-open">0</span></div></div>
                 <div><div class="k">Inactive</div><div class="v"><span class="dot" style="background:var(--text-dim)"></span><span id="stat-inactive">0</span></div></div>
                 <div><div class="k">Rescuers</div><div class="v"><span class="dot" style="background:#60a5fa"></span><span id="stat-rescuers">0</span></div></div>
@@ -1201,6 +1204,8 @@
         async function signOut() {
             if (channel) db.removeChannel(channel);
             channel = null;
+            if (presenceChannel) db.removeChannel(presenceChannel);
+            presenceChannel = null;
             clearInterval(pollTimer);
             seenScanIds = null;
             selected.clear();
@@ -1275,8 +1280,24 @@
                 if (status === 'SUBSCRIBED') setLive(true, 'Live');
                 else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) setLive(false, 'Offline');
             });
+            watchOnlinePlayers();
             clearInterval(pollTimer);
             pollTimer = setInterval(() => { if (!document.hidden && activeTab !== 'scanner') load(); }, 30000);
+        }
+
+        // Signed-in players join the 'online-players' Realtime Presence channel
+        // (keyed by student ID, so several tabs count once). The admin only
+        // listens, so it never counts itself.
+        let presenceChannel = null;
+        function watchOnlinePlayers() {
+            if (presenceChannel) db.removeChannel(presenceChannel);
+            const ch = presenceChannel = db.channel('online-players');
+            ch.on('presence', { event: 'sync' }, () => {
+                $('stat-online').textContent = Object.keys(ch.presenceState()).length.toLocaleString();
+            });
+            ch.subscribe(status => {
+                if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) $('stat-online').textContent = '–';
+            });
         }
 
         // ---------- RENDERING ----------
