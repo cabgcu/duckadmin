@@ -813,7 +813,12 @@
                         <div id="scanner-idle" class="scanner-idle">Camera is off.</div>
                         <div class="scan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                     </div>
-                    <button type="button" id="scanner-btn" class="btn btn-primary" data-action="toggle-scanner">Start camera</button>
+                    <div class="manual-row">
+                        <button type="button" id="scanner-btn" class="btn btn-primary" data-action="toggle-scanner" style="flex:1">Start camera</button>
+                        <button type="button" id="photo-btn" class="btn" data-action="scan-photo" style="flex:1" title="Opens your phone's camera app, which focuses better up close">Take photo</button>
+                    </div>
+                    <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+                    <div id="admin-qr-file" hidden></div>
                     <div id="scan-last" class="scan-last" aria-live="polite"></div>
                     <form id="manual-scan-form" class="manual-row">
                         <input id="manual-code" type="text" placeholder="Or type a QR code…" autocomplete="off">
@@ -2459,6 +2464,10 @@
 
                 case 'scan-mode': return setScanMode(el.dataset.mode);
                 case 'toggle-scanner': return adminScanning ? stopAdminScanner() : startAdminScanner();
+                case 'scan-photo':
+                    stopAdminScanner(); // the camera app can't open while the page holds the camera
+                    $('photo-input').value = '';
+                    return $('photo-input').click();
 
                 case 'delete-location': {
                     const name = el.dataset.name;
@@ -2808,6 +2817,12 @@
         // Activate mode makes a duck claimable; Assign location mode tags it
         // with the chosen location. Codes can be duck links or bare codes.
         let scanMode = 'activate';
+        const QR_READER_CONFIG = {
+            verbose: false,
+            formatsToSupport: typeof Html5QrcodeSupportedFormats !== 'undefined' ? [Html5QrcodeSupportedFormats.QR_CODE] : undefined,
+            // The phone's built-in QR reader where available (Android Chrome): faster and better in poor light
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+        };
         let adminScanner = null;
         let adminScanning = false;
         let scanBusy = false;
@@ -2851,15 +2866,82 @@
         async function startAdminScanner() {
             if (adminScanning) return;
             if (typeof Html5Qrcode === 'undefined') return snackbar('Scanner failed to load. Check your connection and reload.');
-            if (!adminScanner) adminScanner = new Html5Qrcode('admin-qr-reader', { verbose: false });
+            if (!adminScanner) adminScanner = new Html5Qrcode('admin-qr-reader', QR_READER_CONFIG);
             setScannerUI(true);
             try {
-                await adminScanner.start({ facingMode: 'environment' }, { fps: 10, aspectRatio: 1 }, onAdminScan, () => {});
+                // Ask for a sharper picture than the default; the phone falls back if it can't
+                await adminScanner.start({ facingMode: 'environment' }, {
+                    fps: 15,
+                    videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+                }, onAdminScan, () => {});
+                tuneCamera();
             } catch (err) {
                 setScannerUI(false);
                 $('scanner-idle').textContent = 'Camera unavailable. Allow camera access and use the HTTPS site.';
             }
         }
+
+        // Browsers leave the camera on fixed focus unless asked, which blurs
+        // close-up codes. Turn on continuous focus/exposure where supported.
+        async function tuneCamera() {
+            try {
+                const caps = adminScanner.getRunningTrackCapabilities() || {};
+                const advanced = ['focusMode', 'exposureMode', 'whiteBalanceMode']
+                    .filter(k => (caps[k] || []).includes('continuous'))
+                    .map(k => ({ [k]: 'continuous' }));
+                if (advanced.length) await adminScanner.applyVideoConstraints({ advanced });
+            } catch (e) {}
+        }
+
+        // "Take photo" uses the phone's own camera app, then reads the code from the picture
+        let photoReader = null;
+        async function decodePhoto(file) {
+            const img = await new Promise((resolve, reject) => {
+                const i = new Image();
+                i.onload = () => resolve(i);
+                i.onerror = () => reject(new Error('Couldn\'t open that photo.'));
+                i.src = URL.createObjectURL(file);
+            });
+            try {
+                // Phone photos are huge; a smaller copy decodes faster and just as well
+                const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(img.naturalWidth * scale);
+                canvas.height = Math.round(img.naturalHeight * scale);
+                canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                if ('BarcodeDetector' in window) {
+                    try {
+                        const found = await new BarcodeDetector({ formats: ['qr_code'] }).detect(canvas);
+                        if (found.length) return found[0].rawValue;
+                    } catch (e) {}
+                }
+                if (!photoReader) photoReader = new Html5Qrcode('admin-qr-file', QR_READER_CONFIG);
+                const small = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+                try { return await photoReader.scanFile(new File([small], 'scan.jpg', { type: 'image/jpeg' }), false); }
+                catch (e) { return await photoReader.scanFile(file, false); } // last try at full size
+            } finally {
+                URL.revokeObjectURL(img.src);
+            }
+        }
+
+        $('photo-input').addEventListener('change', async () => {
+            const file = $('photo-input').files[0];
+            if (!file) return;
+            if (typeof Html5Qrcode === 'undefined') return snackbar('Scanner failed to load. Check your connection and reload.');
+            const btn = $('photo-btn');
+            btn.disabled = true;
+            btn.textContent = 'Reading…';
+            try {
+                const text = await decodePhoto(file);
+                lastScan = { code: null, at: 0 }; // a photo is always on purpose, even of the same duck
+                await processScan(duckCodeFrom(text));
+            } catch (err) {
+                showScanResult('err', 'No QR code found in that photo. Get closer and try again.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Take photo';
+            }
+        });
 
         async function stopAdminScanner() {
             if (!adminScanning || !adminScanner) return;
