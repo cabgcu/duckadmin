@@ -633,6 +633,8 @@
                 <button type="button" class="btn btn-sm" data-action="bulk-deactivate">Deactivate</button>
                 <label>Location <select id="bulk-location" class="location-select" data-empty="No location"></select></label>
                 <button type="button" class="btn btn-sm" data-action="bulk-location">Set</button>
+                <label>Type <input id="bulk-type" type="text" list="type-options" placeholder="e.g. Rubber" style="width:130px;height:32px"></label>
+                <button type="button" class="btn btn-sm" data-action="bulk-type">Set</button>
                 <button type="button" class="btn btn-sm" data-action="pdf-selected">Download PDF</button>
                 <button type="button" class="btn btn-sm" data-action="flyer-selected">Flyer PDF</button>
                 <button type="button" class="btn btn-sm" data-action="download-selected">Download CSV</button>
@@ -979,6 +981,7 @@
     </dialog>
 
     <datalist id="location-options"></datalist>
+    <datalist id="type-options"></datalist>
 
     <dialog id="confirm-dialog">
         <h2 id="confirm-title"></h2>
@@ -1408,6 +1411,9 @@
         function renderDuckFilters() {
             fillDuckFilter($('duck-filter-type'), 'All types', 'No type', state.ducks.map(d => d.duck_type));
             fillDuckFilter($('duck-filter-location'), 'All locations', 'No location', state.ducks.map(d => d.location));
+            $('type-options').innerHTML = [...new Set(state.ducks.map(d => d.duck_type).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+                .map(t => `<option value="${esc(t)}"></option>`).join('');
             let filtered = false;
             ['duck-filter-type', 'duck-filter-status', 'duck-filter-location'].forEach(id => {
                 $(id).classList.toggle('on', !!$(id).value);
@@ -2338,6 +2344,20 @@
                     return busy(el, async () => {
                         const n = await rpc('admin_set_ducks_location', { p_duck_ids: [...selected], p_location: location });
                         snackbar(location ? `Moved ${n} duck${n === 1 ? '' : 's'} to ${location}.` : `Cleared the location of ${n} duck${n === 1 ? '' : 's'}.`);
+                        await load();
+                    });
+                }
+
+                case 'bulk-type': {
+                    const type = $('bulk-type').value.trim();
+                    if (!type) {
+                        const ok = await confirmDialog(`Clear the type of ${selected.size} duck${selected.size === 1 ? '' : 's'}?`,
+                            'Leave the box empty only if you want these ducks to have no type.', 'Clear type');
+                        if (!ok) return;
+                    }
+                    return busy(el, async () => {
+                        const n = await rpc('admin_set_ducks_type', { p_duck_ids: [...selected], p_duck_type: type });
+                        snackbar(type ? `Set ${n} duck${n === 1 ? '' : 's'} to ${type}.` : `Cleared the type of ${n} duck${n === 1 ? '' : 's'}.`);
                         await load();
                     });
                 }
