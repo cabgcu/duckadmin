@@ -313,6 +313,8 @@
         .status-pill.frozen { color: #93c5fd; background: rgba(96, 165, 250, 0.12); margin-left: 6px; }
         .status-pill.broken { color: var(--warning-text); background: var(--warning-bg); margin-left: 6px; }
         .holo-count { font-variant-numeric: tabular-nums; }
+        .status-pill.judah { color: #fde68a; background: rgba(250, 204, 21, 0.14); margin-left: 6px; }
+        .btn.judah-filter.on { background: rgba(250, 204, 21, 0.14); border-color: rgba(250, 204, 21, 0.4); color: #fde68a; }
         .btn.frozen-filter.on { background: rgba(96, 165, 250, 0.14); border-color: rgba(96, 165, 250, 0.4); color: #bfdbfe; }
         .report-outcome { display: block; margin-top: 4px; color: var(--text-muted); font-size: 12px; white-space: normal; min-width: 220px; max-width: 360px; }
         .broken-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 9999px; border: 1px solid var(--warning-border); background: var(--warning-bg); color: var(--warning-text); font-weight: 600; font-size: 12px; }
@@ -681,6 +683,7 @@
                     <input id="rescuer-search" type="search" placeholder="Search name, email, or student ID...">
                 </div>
                 <span class="spacer"></span>
+                <button type="button" id="judah-filter" class="btn judah-filter" data-action="toggle-judah-filter" hidden title="Rescuers who claimed the Judah Floyd duck and lost their points"></button>
                 <button type="button" id="frozen-filter" class="btn frozen-filter" data-action="toggle-frozen-filter" hidden></button>
                 <button type="button" class="btn" data-action="download-rescuers">Download CSV</button>
             </div>
@@ -1101,6 +1104,7 @@
         const sort = { ducks: { key: 'duck_id', dir: 1 }, players: { key: 'place', dir: 1 } };
         const selected = new Set();
         let activeTab = 'ducks';
+        let judahOnly = false; // Rescuers tab: show only rescuers whose points the Judah duck removed
         let frozenOnly = false; // Rescuers tab: show only rescuers at the hologram limit
         // The duck table shows one page at a time so big hunts stay fast;
         // search, sort, print and CSV still cover every duck.
@@ -1280,14 +1284,16 @@
 
         async function loadNow() {
             try {
-                const [overview, hidden, bans] = await Promise.all([
+                const [overview, hidden, bans, judah] = await Promise.all([
                     rpc('admin_overview', null, 30000),
                     // null until sql/hide-locations.sql has been run
                     rpc('admin_get_locations_hidden', null, 30000).catch(() => null),
                     // null until sql/bans.sql has been run
-                    rpc('admin_list_bans', null, 30000).catch(() => null)
+                    rpc('admin_list_bans', null, 30000).catch(() => null),
+                    // null until sql/judah-duck.sql has been run
+                    rpc('admin_list_judah', null, 30000).catch(() => null)
                 ]);
-                Object.assign(state, overview, { locations_hidden: hidden, bans });
+                Object.assign(state, overview, { locations_hidden: hidden, bans, judah });
                 // Forget selections for ducks that no longer exist
                 const ids = new Set(state.ducks.map(d => d.duck_id));
                 [...selected].forEach(id => { if (!ids.has(id)) selected.delete(id); });
@@ -1563,7 +1569,13 @@
             $('frozen-filter').textContent = frozenOnly ? `❄ Showing ${frozenCount} frozen` : `❄ ${frozenCount} frozen`;
             const limit = state.hologram_limit || 10;
             const bannedIds = new Set((state.bans || []).filter(b => b.kind === 'student' && !b.lifted_at).map(b => b.value));
-            const players = sorted(state.players.filter(p => (!frozenOnly || p.frozen) &&
+            // Judah Floyd duck: points removed until an admin lifts it
+            const judahActive = new Map((state.judah || []).filter(j => !j.lifted_at).map(j => [String(j.student_id), j]));
+            if (!judahActive.size) judahOnly = false;
+            $('judah-filter').hidden = !judahActive.size;
+            $('judah-filter').classList.toggle('on', judahOnly);
+            $('judah-filter').textContent = judahOnly ? `Showing ${judahActive.size} Judah` : `${judahActive.size} need Judah`;
+            const players = sorted(state.players.filter(p => (!frozenOnly || p.frozen) && (!judahOnly || judahActive.has(String(p.student_id))) &&
                 (matches(p, ['first_name', 'last_name', 'student_id', 'email'], term) || fullName(p).toLowerCase().includes(term))), 'players');
             $('rescuer-rows').innerHTML = players.length ? players.map(p => `
                 <tr>
@@ -1574,9 +1586,10 @@
                     <td>${esc(p.email)}</td>
                     <td class="num"><input class="cell-num" type="number" min="0" value="${esc(p.points)}" data-points-player="${esc(p.student_id)}" aria-label="Points for ${esc(fullName(p))}"></td>
                     <td class="num">${esc(p.codes_scanned)}</td>
-                    <td class="num"><span class="holo-count">${esc(p.holograms_today ?? 0)} / ${esc(limit)}</span>${p.frozen ? '<span class="status-pill frozen">Frozen</span>' : ''}${bannedIds.has(String(p.student_id)) ? '<span class="status-pill denied" style="margin-left:6px" title="See the Bans tab">Banned</span>' : ''}</td>
+                    <td class="num"><span class="holo-count">${esc(p.holograms_today ?? 0)} / ${esc(limit)}</span>${p.frozen ? '<span class="status-pill frozen">Frozen</span>' : ''}${bannedIds.has(String(p.student_id)) ? '<span class="status-pill denied" style="margin-left:6px" title="See the Bans tab">Banned</span>' : ''}${judahActive.has(String(p.student_id)) ? `<span class="status-pill judah" title="Claimed the Judah Floyd duck: ${esc(judahActive.get(String(p.student_id)).points_removed)} points removed">Judah −${esc(judahActive.get(String(p.student_id)).points_removed)}</span>` : ''}</td>
                     <td class="muted">${esc(formatDate(p.created_at))}</td>
                     <td class="actions"><div class="action-wrapper">
+                        ${judahActive.has(String(p.student_id)) ? `<button type="button" class="btn btn-sm" data-action="lift-judah" data-id="${esc(judahActive.get(String(p.student_id)).id)}" title="They found Judah Floyd: give back their points plus 500">Lift Judah</button>` : ''}
                         ${p.frozen ? `<button type="button" class="btn btn-sm" data-action="unfreeze-rescuer" data-id="${esc(p.student_id)}" title="Give them a fresh set of hologram scans for today">Unfreeze</button>` : ''}
                         <button type="button" class="btn-icon-sq" data-action="edit-rescuer" data-id="${esc(p.student_id)}" title="Edit rescuer" aria-label="Edit rescuer">${ICONS.edit}</button>
                         <button type="button" class="btn-icon-sq danger" data-action="delete-rescuer" data-id="${esc(p.student_id)}" title="Delete rescuer" aria-label="Delete rescuer">${ICONS.trash}</button>
@@ -2470,6 +2483,26 @@
                     return busy(el, async () => {
                         await rpc('admin_set_locations_hidden', { p_hidden: hide });
                         snackbar(hide ? 'Duck locations are hidden from rescuers.' : 'Duck locations are visible to rescuers.');
+                        await load();
+                    });
+                }
+
+                case 'toggle-judah-filter':
+                    judahOnly = !judahOnly;
+                    return renderRescuers();
+
+                case 'lift-judah': {
+                    const j = (state.judah || []).find(x => String(x.id) === id);
+                    if (!j) return;
+                    const p = findPlayer(j.student_id);
+                    const name = fullName(p) || j.student_id;
+                    const give = Number(j.points_removed) + 500;
+                    const ok = await confirmDialog(`Lift Judah point removal for ${name}?`,
+                        `They get back the ${Number(j.points_removed).toLocaleString()} points the Judah Floyd duck took, plus 500: ${give.toLocaleString()} points added to their score.`, 'Lift');
+                    if (!ok) return;
+                    return busy(el, async () => {
+                        const added = await rpc('admin_lift_judah', { p_id: Number(id), p_bonus: 500 });
+                        snackbar(`${name} got ${Number(added).toLocaleString()} points back.`);
                         await load();
                     });
                 }
