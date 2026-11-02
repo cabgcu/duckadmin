@@ -56,6 +56,13 @@ returns jsonb language sql stable security definer set search_path = public, pri
        and r.claimed_at is null;
 $$;
 
+-- Imported students count as registered rescuers: the app adds this to the
+-- rescuer total on the rank card.
+create or replace function public.get_waiting_rescuer_count()
+returns integer language sql stable security definer set search_path = public, private as $$
+    select count(*)::int from private.preregistrations where claimed_at is null;
+$$;
+
 -- ---------- Admin ----------
 -- p_rows: [{ "first_name": "...", "last_name": "...", "email": "..." }, ...]
 -- Adds new emails, updates names of ones already waiting, and skips emails
@@ -129,10 +136,12 @@ begin
 end $$;
 
 revoke all on function public.find_preregistration(text) from public;
+revoke all on function public.get_waiting_rescuer_count() from public;
 revoke all on function public.admin_import_preregistrations(jsonb) from public, anon;
 revoke all on function public.admin_list_preregistrations() from public, anon;
 revoke all on function public.admin_delete_preregistrations(text[]) from public, anon;
 grant execute on function public.find_preregistration(text) to anon, authenticated;
+grant execute on function public.get_waiting_rescuer_count() to anon, authenticated;
 grant execute on function public.admin_import_preregistrations(jsonb) to authenticated;
 grant execute on function public.admin_list_preregistrations() to authenticated;
 grant execute on function public.admin_delete_preregistrations(text[]) to authenticated;

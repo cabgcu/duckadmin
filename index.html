@@ -1445,16 +1445,12 @@
             $('stat-open').textContent = state.ducks.length - claimed - inactive;
             $('stat-inactive').textContent = inactive;
             // Rescuers imported from a spreadsheet count too, before they've entered a student ID
-            const waiting = (state.preregs || []).length;
-            const rescuers = state.players.length + waiting;
-            const rescuerNote = waiting ? `${state.players.length.toLocaleString()} registered + ${waiting.toLocaleString()} imported, waiting for a student ID` : '';
+            const rescuers = state.players.length + (state.preregs || []).length;
             $('stat-rescuers').textContent = rescuers.toLocaleString();
-            $('stat-rescuers').title = rescuerNote;
             $('stat-scans').textContent = state.total_scans;
             $('stat-points').textContent = points.toLocaleString();
             $('count-ducks').textContent = state.ducks.length;
             $('count-rescuers').textContent = rescuers.toLocaleString();
-            $('count-rescuers').title = rescuerNote;
             $('count-scans').textContent = state.total_scans;
         }
 
