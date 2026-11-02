@@ -315,6 +315,11 @@
         .holo-count { font-variant-numeric: tabular-nums; }
         .status-pill.judah { color: #fde68a; background: rgba(250, 204, 21, 0.14); margin-left: 6px; }
         .btn.judah-filter.on { background: rgba(250, 204, 21, 0.14); border-color: rgba(250, 204, 21, 0.4); color: #fde68a; }
+        .btn.prereg-filter.on { background: rgba(167, 139, 250, 0.14); border-color: rgba(167, 139, 250, 0.4); color: #ddd6fe; }
+        .status-pill.prereg { color: #ddd6fe; background: rgba(167, 139, 250, 0.14); }
+        .import-table { width: 100%; min-width: 0; margin-top: 10px; font-size: 12px; border-collapse: collapse; }
+        .import-table th, .import-table td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--line); white-space: normal; word-break: break-word; }
+        .import-table .skip td { opacity: 0.55; }
         .btn.frozen-filter.on { background: rgba(96, 165, 250, 0.14); border-color: rgba(96, 165, 250, 0.4); color: #bfdbfe; }
         .report-outcome { display: block; margin-top: 4px; color: var(--text-muted); font-size: 12px; white-space: normal; min-width: 220px; max-width: 360px; }
         .broken-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 9999px; border: 1px solid var(--warning-border); background: var(--warning-bg); color: var(--warning-text); font-weight: 600; font-size: 12px; }
@@ -685,6 +690,8 @@
                 <span class="spacer"></span>
                 <button type="button" id="judah-filter" class="btn judah-filter" data-action="toggle-judah-filter" hidden title="Rescuers who claimed the Judah Floyd duck and lost their points"></button>
                 <button type="button" id="frozen-filter" class="btn frozen-filter" data-action="toggle-frozen-filter" hidden></button>
+                <button type="button" id="prereg-filter" class="btn prereg-filter" data-action="toggle-prereg-filter" hidden title="Imported from a spreadsheet; they enter their student ID when they sign in or register"></button>
+                <button type="button" class="btn" data-action="import-rescuers" title="Add rescuers from an Excel or CSV list of first name, last name and email">Import list</button>
                 <button type="button" class="btn" data-action="download-rescuers">Download CSV</button>
             </div>
             <div class="table-wrap">
@@ -992,6 +999,21 @@
         </form>
     </dialog>
 
+    <!-- Import rescuers from a spreadsheet (sql/preregistrations.sql) -->
+    <dialog id="import-dialog">
+        <form id="import-form" method="dialog">
+            <h2>Import rescuers</h2>
+            <p>Pick an Excel (.xlsx, .xls) or CSV file with <b>first name</b>, <b>last name</b> and <b>email</b> columns. No student IDs needed: each student enters theirs the first time they sign in or register, and their name fills in from this list when they type their email.</p>
+            <div class="field"><label for="import-file">Spreadsheet</label><input id="import-file" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"></div>
+            <div id="import-preview" class="preview" hidden></div>
+            <p id="import-error" class="error" hidden></p>
+            <div class="dialog-actions">
+                <button type="button" class="btn" data-action="close-dialog">Cancel</button>
+                <button type="submit" id="import-submit" class="btn btn-primary" disabled>Import</button>
+            </div>
+        </form>
+    </dialog>
+
     <dialog id="password-dialog">
         <form id="password-form" method="dialog">
             <h2>Change password</h2>
@@ -1106,6 +1128,8 @@
         let activeTab = 'ducks';
         let judahOnly = false; // Rescuers tab: show only rescuers whose points the Judah duck removed
         let frozenOnly = false; // Rescuers tab: show only rescuers at the hologram limit
+        let preregOnly = false; // Rescuers tab: show imported rescuers still waiting to enter a student ID
+        let importRows = null; // rows parsed from the spreadsheet in the import dialog
         // The duck table shows one page at a time so big hunts stay fast;
         // search, sort, print and CSV still cover every duck.
         const DUCK_PAGE_SIZE = 100;
@@ -1284,16 +1308,18 @@
 
         async function loadNow() {
             try {
-                const [overview, hidden, bans, judah] = await Promise.all([
+                const [overview, hidden, bans, judah, preregs] = await Promise.all([
                     rpc('admin_overview', null, 30000),
                     // null until sql/hide-locations.sql has been run
                     rpc('admin_get_locations_hidden', null, 30000).catch(() => null),
                     // null until sql/bans.sql has been run
                     rpc('admin_list_bans', null, 30000).catch(() => null),
                     // null until sql/judah-duck.sql has been run
-                    rpc('admin_list_judah', null, 30000).catch(() => null)
+                    rpc('admin_list_judah', null, 30000).catch(() => null),
+                    // null until sql/preregistrations.sql has been run
+                    rpc('admin_list_preregistrations', null, 30000).catch(() => null)
                 ]);
-                Object.assign(state, overview, { locations_hidden: hidden, bans, judah });
+                Object.assign(state, overview, { locations_hidden: hidden, bans, judah, preregs });
                 // Forget selections for ducks that no longer exist
                 const ids = new Set(state.ducks.map(d => d.duck_id));
                 [...selected].forEach(id => { if (!ids.has(id)) selected.delete(id); });
@@ -1575,6 +1601,32 @@
             $('judah-filter').hidden = !judahActive.size;
             $('judah-filter').classList.toggle('on', judahOnly);
             $('judah-filter').textContent = judahOnly ? `Showing ${judahActive.size} Judah` : `${judahActive.size} need Judah`;
+            // Imported from a spreadsheet, no student ID yet
+            const preregs = state.preregs || [];
+            if (!preregs.length) preregOnly = false;
+            $('prereg-filter').hidden = !preregs.length;
+            $('prereg-filter').classList.toggle('on', preregOnly);
+            $('prereg-filter').textContent = preregOnly ? `Showing ${preregs.length} waiting for ID` : `${preregs.length} waiting for ID`;
+            if (preregOnly) {
+                const rows = preregs.filter(r => matches(r, ['first_name', 'last_name', 'email'], term) || fullName(r).toLowerCase().includes(term));
+                $('rescuer-rows').innerHTML = rows.length ? rows.map(r => `
+                <tr>
+                    <td class="num muted">–</td>
+                    <td><b>${esc(r.first_name)}</b></td>
+                    <td>${esc(r.last_name)}</td>
+                    <td><span class="status-pill prereg" title="They enter it the first time they sign in or register">Asked at sign-in</span></td>
+                    <td>${esc(r.email)}</td>
+                    <td class="num muted">–</td>
+                    <td class="num muted">–</td>
+                    <td class="num muted">–</td>
+                    <td class="muted" title="Imported${r.imported_by ? ' by ' + esc(r.imported_by) : ''}">Imported ${esc(formatDate(r.imported_at))}</td>
+                    <td class="actions"><div class="action-wrapper">
+                        <button type="button" class="btn-icon-sq danger" data-action="delete-prereg" data-id="${esc(r.email)}" title="Remove from the import list" aria-label="Remove from the import list">${ICONS.trash}</button>
+                    </div></td>
+                </tr>`).join('') :
+                    '<tr><td class="empty" colspan="10">No imported rescuers match your search.</td></tr>';
+                return;
+            }
             const players = sorted(state.players.filter(p => (!frozenOnly || p.frozen) && (!judahOnly || judahActive.has(String(p.student_id))) &&
                 (matches(p, ['first_name', 'last_name', 'student_id', 'email'], term) || fullName(p).toLowerCase().includes(term))), 'players');
             $('rescuer-rows').innerHTML = players.length ? players.map(p => `
@@ -2511,6 +2563,32 @@
                     frozenOnly = !frozenOnly;
                     return renderRescuers();
 
+                case 'toggle-prereg-filter':
+                    preregOnly = !preregOnly;
+                    return renderRescuers();
+
+                case 'import-rescuers':
+                    if (state.preregs === null) return snackbar('Run sql/preregistrations.sql in the Supabase SQL editor first.');
+                    importRows = null;
+                    $('import-form').reset();
+                    $('import-preview').hidden = true;
+                    $('import-submit').disabled = true;
+                    showError('import-error', '');
+                    return $('import-dialog').showModal();
+
+                case 'delete-prereg': {
+                    const r = (state.preregs || []).find(x => x.email === id);
+                    if (!r) return;
+                    const ok = await confirmDialog(`Remove ${fullName(r) || r.email}?`,
+                        `They come off the import list. They can still register in the app themselves.`, 'Remove', true);
+                    if (!ok) return;
+                    return busy(el, async () => {
+                        await rpc('admin_delete_preregistrations', { p_emails: [r.email] });
+                        snackbar(`${fullName(r) || r.email} removed.`);
+                        await load();
+                    });
+                }
+
                 case 'unfreeze-rescuer': {
                     const p = findPlayer(id);
                     const ok = await confirmDialog(`Unfreeze ${fullName(p) || id}?`,
@@ -2808,6 +2886,147 @@
             showError('crawl-error', '');
             $('crawl-dialog').showModal();
         }
+
+        // ---------- IMPORT RESCUERS ----------
+        // Bulk add rescuers from an Excel/CSV list of first name, last name and
+        // email (sql/preregistrations.sql). They have no student ID yet: the
+        // app asks for it when they sign in or register.
+        const XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        function loadXLSX() {
+            if (window.XLSX) return Promise.resolve(window.XLSX);
+            loadXLSX.promise = loadXLSX.promise || new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = XLSX_SRC;
+                s.onload = () => resolve(window.XLSX);
+                s.onerror = () => { loadXLSX.promise = null; reject(new Error('Couldn\'t load the spreadsheet reader. Check your connection.')); };
+                document.head.appendChild(s);
+            });
+            return loadXLSX.promise;
+        }
+
+        const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+        const GCU_EMAIL_RE = /@my\.gcu\.edu$/i;
+
+        // Which column holds what. Looks for a header row in the first rows;
+        // without one, the column full of @ signs is the email and the first
+        // two other columns are first and last name.
+        function findImportColumns(grid) {
+            const norm = v => String(v ?? '').toLowerCase().replace(/[^a-z]/g, '');
+            for (let r = 0; r < Math.min(grid.length, 10); r++) {
+                const h = grid[r].map(norm);
+                const col = test => h.findIndex(test);
+                const email = col(x => x.includes('email') || x === 'mail');
+                if (email < 0) continue;
+                const first = col(x => x.includes('first') || x.includes('given') || x === 'fname' || x.includes('preferred'));
+                const last = col(x => x.includes('last') || x.includes('surname') || x.includes('family') || x === 'lname');
+                const name = col(x => x === 'name' || x === 'fullname' || x === 'studentname');
+                if (first >= 0 || name >= 0) return { header: r, email, first, last, name };
+            }
+            const width = Math.max(0, ...grid.slice(0, 50).map(row => row.length));
+            let email = -1, best = 0;
+            for (let c = 0; c < width; c++) {
+                const n = grid.slice(0, 50).filter(row => EMAIL_RE.test(String(row[c] ?? '').trim())).length;
+                if (n > best) { best = n; email = c; }
+            }
+            if (email < 0) return null;
+            const others = [...Array(width).keys()].filter(c => c !== email);
+            return { header: -1, email, first: others[0] ?? -1, last: others[1] ?? -1, name: -1 };
+        }
+
+        function parseImport(grid) {
+            const cols = findImportColumns(grid);
+            if (!cols) throw new Error('Couldn\'t find an email column. Add a header row with First Name, Last Name and Email.');
+            const cell = (row, c) => (c >= 0 ? String(row[c] ?? '').replace(/\s+/g, ' ').trim() : '');
+            const registered = new Set(state.players.map(p => String(p.email || '').trim().toLowerCase()).filter(Boolean));
+            const waiting = new Set((state.preregs || []).map(r => r.email));
+            const seen = new Set();
+            const rows = [];
+            grid.slice(cols.header + 1).forEach(row => {
+                let first = cell(row, cols.first), last = cell(row, cols.last);
+                const email = cell(row, cols.email).toLowerCase().replace(/^mailto:/, '');
+                if (!first && !last && !email) return; // blank line
+                if (!first && cols.name >= 0) {
+                    // One "Name" column: "Last, First" or "First Last"
+                    const full = cell(row, cols.name);
+                    if (full.includes(',')) [last, first] = full.split(',').map(x => x.trim());
+                    else { const parts = full.split(' '); first = parts.shift() || ''; last = last || parts.join(' '); }
+                }
+                let status = 'new', note = '';
+                if (!EMAIL_RE.test(email)) { status = 'skip'; note = email ? 'Not an email' : 'No email'; }
+                else if (!GCU_EMAIL_RE.test(email)) { status = 'skip'; note = 'Not @my.gcu.edu'; }
+                else if (!first) { status = 'skip'; note = 'No first name'; }
+                else if (seen.has(email)) { status = 'skip'; note = 'Listed twice'; }
+                else if (registered.has(email)) { status = 'skip'; note = 'Already registered'; }
+                else if (waiting.has(email)) { status = 'update'; note = 'Updates name'; }
+                if (EMAIL_RE.test(email)) seen.add(email);
+                rows.push({ first_name: first, last_name: last, email, status, note });
+            });
+            return rows;
+        }
+
+        function renderImportPreview(rows, fileName) {
+            const count = k => rows.filter(r => r.status === k).length;
+            const ready = count('new'), update = count('update'), skip = count('skip');
+            const show = [...rows.filter(r => r.status === 'skip'), ...rows.filter(r => r.status !== 'skip')].slice(0, 100);
+            $('import-preview').innerHTML = `
+                <b>${esc(fileName)}</b>: ${ready.toLocaleString()} to add${update ? `, ${update.toLocaleString()} already imported (names updated)` : ''}${skip ? `, ${skip.toLocaleString()} skipped` : ''}.
+                <div style="max-height:260px;overflow:auto">
+                <table class="import-table">
+                    <thead><tr><th>First</th><th>Last</th><th>Email</th><th></th></tr></thead>
+                    <tbody>${show.map(r => `<tr class="${r.status === 'skip' ? 'skip' : ''}"><td>${esc(r.first_name)}</td><td>${esc(r.last_name)}</td><td>${esc(r.email)}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody>
+                </table></div>
+                ${rows.length > show.length ? `<div style="margin-top:6px">Showing ${show.length} of ${rows.length.toLocaleString()} rows.</div>` : ''}`;
+            $('import-preview').hidden = false;
+            $('import-submit').disabled = !(ready + update);
+            $('import-submit').textContent = `Import ${(ready + update).toLocaleString()}`;
+        }
+
+        $('import-file').addEventListener('change', async event => {
+            const file = event.target.files[0];
+            importRows = null;
+            $('import-submit').disabled = true;
+            $('import-submit').textContent = 'Import';
+            $('import-preview').hidden = true;
+            showError('import-error', '');
+            if (!file) return;
+            try {
+                const XLSX = await loadXLSX();
+                const book = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+                const sheet = book.Sheets[book.SheetNames[0]];
+                const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '', blankrows: false });
+                const rows = parseImport(grid);
+                if (!rows.length) throw new Error('That sheet has no rows.');
+                importRows = rows;
+                renderImportPreview(rows, file.name);
+            } catch (err) {
+                showError('import-error', err.message || 'Couldn\'t read that file.');
+            }
+        });
+
+        $('import-form').addEventListener('submit', event => {
+            event.preventDefault();
+            const rows = (importRows || []).filter(r => r.status !== 'skip')
+                .map(({ first_name, last_name, email }) => ({ first_name, last_name, email }));
+            if (!rows.length) return;
+            busy(event.submitter, async () => {
+                try {
+                    const total = { added: 0, updated: 0, already_registered: 0, invalid: 0 };
+                    for (let i = 0; i < rows.length; i += 500) {
+                        const res = await rpc('admin_import_preregistrations', { p_rows: rows.slice(i, i + 500) }, 60000);
+                        Object.keys(total).forEach(k => { total[k] += Number(res[k]) || 0; });
+                    }
+                    $('import-dialog').close();
+                    const extra = total.already_registered + total.invalid;
+                    snackbar(`Imported ${total.added.toLocaleString()} rescuer${total.added === 1 ? '' : 's'}` +
+                        (total.updated ? `, updated ${total.updated.toLocaleString()}` : '') +
+                        (extra ? `, skipped ${extra.toLocaleString()}` : '') + '.');
+                    preregOnly = true;
+                    await load();
+                } catch (err) {
+                    showError('import-error', err.message || 'Couldn\'t import. Try again.');
+                }
+            });
+        });
 
         $('crawl-form').addEventListener('submit', event => {
             event.preventDefault();
