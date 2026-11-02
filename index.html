@@ -533,6 +533,7 @@
                 <button type="button" class="nav-link" data-action="tab" data-tab="scanner"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>Scanner</button>
                 <button type="button" class="nav-link" data-action="tab" data-tab="messages"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Messages<span id="count-messages" class="count"></span></button>
                 <button type="button" class="nav-link" data-action="tab" data-tab="reports"><svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>Reports<span id="count-reports" class="count"></span></button>
+                <button type="button" class="nav-link" data-action="tab" data-tab="bans"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>Bans<span id="count-bans" class="count"></span></button>
             </nav>
             <div class="side-bottom">
                 <div class="side-card">
@@ -775,6 +776,44 @@
             <p class="footnote">Reports are resolved automatically: a rescuer who names the duck (ID or code) gets that duck and it's flagged for reprinting; otherwise they get the standard points for that kind of duck and no other duck is used up. The first 5 Rebel duck and 10 hologram code reports per rescuer are honored automatically; after that they come here as Under review for you to approve or deny. Undo takes the points back (and re-opens a named duck).</p>
         </section>
 
+        <!-- Bans: devices and student IDs caught tampering (sql/bans.sql) -->
+        <section id="panel-bans" class="table-container" hidden>
+            <div class="filter-row">
+                <div class="search-wrapper">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input id="ban-search" type="search" placeholder="Search student ID, name, device or reason...">
+                </div>
+                <div class="duck-filters">
+                    <select id="ban-filter" aria-label="Filter bans">
+                        <option value="active">Banned now</option>
+                        <option value="lifted">Unbanned</option>
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-action="manual-ban">Ban a student ID</button>
+                <button type="button" class="btn" data-action="download-bans">Download CSV</button>
+            </div>
+            <p id="bans-setup" class="footnote" hidden>Bans aren't set up yet. Run <b>sql/bans.sql</b> once in the Supabase SQL editor.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Banned</th>
+                            <th>Rescuer</th>
+                            <th>Reason</th>
+                            <th>Caught on</th>
+                            <th>Status</th>
+                            <th class="num">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ban-rows"></tbody>
+                </table>
+            </div>
+            <p class="footnote">Duck Hunt bans a phone, and the student ID signed in on it, when it catches someone opening dev tools or view source, pausing the page in a debugger, or trying a burst of fake codes. A banned device or student ID can't sign in, register, scan or report codes, even by calling the database directly. Unban lifts just that one ban: a student whose phone is also banned needs both lifted to play on that phone.</p>
+        </section>
+
         <!-- Messages: announcements every player sees as a hologram pop-up -->
         <section id="panel-messages" class="table-container" hidden>
             <div class="scanner-grid">
@@ -871,6 +910,10 @@
         <button type="button" class="mob-nav-btn" data-action="tab" data-tab="messages">
             <svg viewBox="0 0 24 24" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             <span>Messages</span>
+        </button>
+        <button type="button" class="mob-nav-btn" data-action="tab" data-tab="bans">
+            <svg viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            <span>Bans</span>
         </button>
         <button type="button" class="mob-nav-btn" data-action="sign-out">
             <svg viewBox="0 0 24 24" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -1054,7 +1097,7 @@
         }
 
         // ---------- STATE ----------
-        const state = { ducks: [], players: [], scans: [], total_scans: 0, locations: [], announcements: [], hunt_open: true, reports: [] };
+        const state = { ducks: [], players: [], scans: [], total_scans: 0, locations: [], announcements: [], hunt_open: true, reports: [], bans: null };
         const sort = { ducks: { key: 'duck_id', dir: 1 }, players: { key: 'place', dir: 1 } };
         const selected = new Set();
         let activeTab = 'ducks';
@@ -1237,12 +1280,14 @@
 
         async function loadNow() {
             try {
-                const [overview, hidden] = await Promise.all([
+                const [overview, hidden, bans] = await Promise.all([
                     rpc('admin_overview', null, 30000),
                     // null until sql/hide-locations.sql has been run
-                    rpc('admin_get_locations_hidden', null, 30000).catch(() => null)
+                    rpc('admin_get_locations_hidden', null, 30000).catch(() => null),
+                    // null until sql/bans.sql has been run
+                    rpc('admin_list_bans', null, 30000).catch(() => null)
                 ]);
-                Object.assign(state, overview, { locations_hidden: hidden });
+                Object.assign(state, overview, { locations_hidden: hidden, bans });
                 // Forget selections for ducks that no longer exist
                 const ids = new Set(state.ducks.map(d => d.duck_id));
                 [...selected].forEach(id => { if (!ids.has(id)) selected.delete(id); });
@@ -1329,6 +1374,7 @@
             renderLocations();
             renderMessages();
             renderReports();
+            renderBans();
             renderSortArrows();
         }
 
@@ -1516,6 +1562,7 @@
             $('frozen-filter').classList.toggle('on', frozenOnly);
             $('frozen-filter').textContent = frozenOnly ? `❄ Showing ${frozenCount} frozen` : `❄ ${frozenCount} frozen`;
             const limit = state.hologram_limit || 10;
+            const bannedIds = new Set((state.bans || []).filter(b => b.kind === 'student' && !b.lifted_at).map(b => b.value));
             const players = sorted(state.players.filter(p => (!frozenOnly || p.frozen) &&
                 (matches(p, ['first_name', 'last_name', 'student_id', 'email'], term) || fullName(p).toLowerCase().includes(term))), 'players');
             $('rescuer-rows').innerHTML = players.length ? players.map(p => `
@@ -1527,7 +1574,7 @@
                     <td>${esc(p.email)}</td>
                     <td class="num"><input class="cell-num" type="number" min="0" value="${esc(p.points)}" data-points-player="${esc(p.student_id)}" aria-label="Points for ${esc(fullName(p))}"></td>
                     <td class="num">${esc(p.codes_scanned)}</td>
-                    <td class="num"><span class="holo-count">${esc(p.holograms_today ?? 0)} / ${esc(limit)}</span>${p.frozen ? '<span class="status-pill frozen">Frozen</span>' : ''}</td>
+                    <td class="num"><span class="holo-count">${esc(p.holograms_today ?? 0)} / ${esc(limit)}</span>${p.frozen ? '<span class="status-pill frozen">Frozen</span>' : ''}${bannedIds.has(String(p.student_id)) ? '<span class="status-pill denied" style="margin-left:6px" title="See the Bans tab">Banned</span>' : ''}</td>
                     <td class="muted">${esc(formatDate(p.created_at))}</td>
                     <td class="actions"><div class="action-wrapper">
                         ${p.frozen ? `<button type="button" class="btn btn-sm" data-action="unfreeze-rescuer" data-id="${esc(p.student_id)}" title="Give them a fresh set of hologram scans for today">Unfreeze</button>` : ''}
@@ -1567,7 +1614,7 @@
         function switchTab(tab) {
             activeTab = tab;
             document.querySelectorAll('[data-action="tab"]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-            ['ducks', 'rescuers', 'scans', 'scanner', 'messages', 'reports'].forEach(t => { $('panel-' + t).hidden = t !== tab; });
+            ['ducks', 'rescuers', 'scans', 'scanner', 'messages', 'reports', 'bans'].forEach(t => { $('panel-' + t).hidden = t !== tab; });
             if (tab !== 'scanner') {
                 stopAdminScanner();
                 if (dataStale && channel) scheduleLoad();
@@ -2581,6 +2628,40 @@
                         ['Rank', 'First Name', 'Last Name', 'Student ID', 'Email', 'Points', 'Codes Scanned', 'Registered'],
                         sorted(state.players, 'players').map(p => [p.place, p.first_name, p.last_name, p.student_id, p.email, p.points, p.codes_scanned, p.created_at]));
 
+                case 'unban': {
+                    const b = (state.bans || []).find(x => String(x.id) === id);
+                    if (!b) return;
+                    const what = b.kind === 'student'
+                        ? `student ID ${b.value}${b.player_name ? ' (' + b.player_name + ')' : ''}`
+                        : `device ${shortDevice(b.value)}${b.player_name ? ' (last used by ' + b.player_name + ')' : ''}`;
+                    const other = (state.bans || []).find(x => !x.lifted_at && x.id !== b.id &&
+                        ((b.kind === 'student' && x.kind === 'device' && x.value === b.device_id) ||
+                         (b.kind === 'device' && x.kind === 'student' && x.value === b.student_id)));
+                    const ok = await confirmDialog(`Unban ${what}?`,
+                        `They can use Duck Hunt again right away.${other ? ` Their ${other.kind === 'student' ? 'student ID' : 'device'} is still banned; unban it too if they should be fully let back in.` : ''}`, 'Unban');
+                    if (!ok) return;
+                    return busy(el, async () => {
+                        await rpc('admin_unban', { p_id: Number(id) });
+                        snackbar(`Unbanned ${b.kind === 'student' ? 'student ID ' + b.value : 'device ' + shortDevice(b.value)}.`);
+                        await load();
+                    });
+                }
+                case 'manual-ban': {
+                    const studentId = (prompt('Student ID to ban from Duck Hunt:') || '').trim();
+                    if (!studentId) return;
+                    const reason = (prompt('Reason (shown in the ban log):', 'Banned by an admin') || '').trim();
+                    return busy(el, async () => {
+                        await rpc('admin_ban', { p_kind: 'student', p_value: studentId, p_reason: reason });
+                        snackbar(`Student ID ${studentId} is banned.`);
+                        await load();
+                    });
+                }
+                case 'download-bans':
+                    return downloadCSV(`duck-hunt-bans-${today()}.csv`,
+                        ['Time', 'Banned', 'Value', 'Rescuer', 'Student ID', 'Device ID', 'Reason', 'Details', 'Browser', 'Unbanned At', 'Unbanned By'],
+                        (state.bans || []).map(b => [b.created_at, b.kind === 'student' ? 'Student ID' : 'Device', b.value, b.player_name || '',
+                            b.student_id || '', b.device_id || '', b.reason, b.details || '', b.user_agent || '', b.lifted_at || '', b.lifted_by || '']));
+
                 case 'download-scans':
                     return busy(el, async () => {
                         let all = [];
@@ -2756,6 +2837,53 @@
         }
 
         $('report-search').addEventListener('input', renderReports);
+
+        // ---------- BANS ----------
+        function shortDevice(id) {
+            return id ? String(id).slice(0, 8) : '';
+        }
+
+        function deviceName(ua) {
+            const u = String(ua || '');
+            const os = /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? 'Android'
+                : /Macintosh/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : /CrOS/.test(u) ? 'Chromebook' : /Linux/.test(u) ? 'Linux' : '';
+            const browser = /EdgA?\//.test(u) ? 'Edge' : /CriOS|Chrome\//.test(u) ? 'Chrome' : /FxiOS|Firefox\//.test(u) ? 'Firefox'
+                : /Safari\//.test(u) ? 'Safari' : '';
+            return [os, browser].filter(Boolean).join(' · ');
+        }
+
+        function renderBans() {
+            const bans = state.bans || [];
+            $('bans-setup').hidden = state.bans !== null;
+            const active = bans.filter(b => !b.lifted_at).length;
+            $('count-bans').textContent = active || '';
+            $('count-bans').title = active ? `${active} banned now` : '';
+
+            const term = $('ban-search').value.trim().toLowerCase();
+            const filter = $('ban-filter').value;
+            const rows = bans.filter(b => (!filter || (filter === 'active') === !b.lifted_at) &&
+                matches(b, ['value', 'student_id', 'device_id', 'player_name', 'reason', 'details', 'user_agent', 'lifted_by'], term));
+            $('ban-rows').innerHTML = rows.length ? rows.map(b => `
+                <tr>
+                    <td class="muted">${esc(formatDate(b.created_at))}</td>
+                    <td>${b.kind === 'student'
+                        ? `<b>Student ID</b><br><span class="mono">${esc(b.value)}</span>`
+                        : `<b>Device</b><br><span class="mono" title="${esc(b.value)}">${esc(shortDevice(b.value))}</span>`}</td>
+                    <td>${b.player_name ? `<b>${esc(b.player_name)}</b><br>` : ''}${b.student_id ? `<span class="mono">${esc(b.student_id)}</span>` : '<span class="muted">Not signed in</span>'}</td>
+                    <td>${esc(b.reason)}${b.details ? `<span class="report-outcome">${esc(b.details)}</span>` : ''}</td>
+                    <td>${b.device_id ? `<span class="mono" title="${esc(b.device_id)}">${esc(shortDevice(b.device_id))}</span>` : ''}${b.user_agent ? `<span class="report-outcome" title="${esc(b.user_agent)}">${esc(deviceName(b.user_agent) || 'Unknown device')}</span>` : ''}</td>
+                    <td>${b.lifted_at
+                        ? `<span class="status-pill reversed">Unbanned</span><span class="report-outcome">${esc(formatDate(b.lifted_at))}${b.lifted_by ? ' by ' + esc(b.lifted_by) : ''}</span>`
+                        : '<span class="status-pill denied">Banned</span>'}</td>
+                    <td class="actions"><div class="action-wrapper">
+                        ${b.lifted_at ? '' : `<button type="button" class="btn btn-sm" data-action="unban" data-id="${esc(b.id)}" title="Let this ${b.kind === 'student' ? 'student ID' : 'device'} back into Duck Hunt">Unban ${b.kind === 'student' ? 'student ID' : 'device'}</button>`}
+                    </div></td>
+                </tr>`).join('') :
+                `<tr><td class="empty" colspan="7">${bans.length ? 'No bans match.' : 'Nobody has been banned.'}</td></tr>`;
+        }
+
+        $('ban-search').addEventListener('input', renderBans);
+        $('ban-filter').addEventListener('change', renderBans);
         $('report-filter').addEventListener('change', renderReports);
 
         // ---------- MESSAGES ----------
