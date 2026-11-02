@@ -1,11 +1,9 @@
--- Bans: block devices and student IDs caught inspecting or tampering with
--- Duck Hunt. Run once in the Supabase SQL editor. Safe to run again.
+-- Bans: block student IDs (or devices) from Duck Hunt. Run once in the
+-- Supabase SQL editor. Safe to run again.
 --
--- The player app bans itself when it catches someone opening dev tools,
--- using view-source / save-page shortcuts, pausing the page in a debugger,
--- or firing off a burst of fake codes. It calls report_tamper with its
--- device ID (a random ID the app keeps on the phone) and the signed-in
--- student ID, if any. Both get banned.
+-- Admins ban a student ID by hand from the Bans tab. The app no longer bans
+-- anyone on its own (see sql/remove-autoban.sql); the device ID it sends (a
+-- random ID the app keeps on the phone) is only used to enforce bans.
 --
 -- Enforcement in the database (works even when someone calls the API
 -- directly instead of using the app):
@@ -64,37 +62,8 @@ begin
     return jsonb_build_object('banned', true, 'kind', b.kind, 'reason', b.reason, 'since', b.created_at);
 end $$;
 
--- The app reports itself when it catches tampering
-create or replace function public.report_tamper(p_device_id text, p_student_id text, p_reason text, p_details text default null)
-returns jsonb language plpgsql security definer set search_path = public, private as $$
-declare
-    v_dev     text := private.clean_device_id(p_device_id);
-    v_sid     text := nullif(left(btrim(coalesce(p_student_id, '')), 40), '');
-    v_reason  text := coalesce(nullif(left(btrim(coalesce(p_reason, '')), 120), ''), 'Tampering detected');
-    v_details text := nullif(left(btrim(coalesce(p_details, '')), 500), '');
-    v_ua      text := left(private.request_header('user-agent'), 300);
-begin
-    -- Only ban student IDs that are actually registered, and cap how many
-    -- student IDs can be banned this way in 10 minutes, so nobody can script
-    -- this to ban the whole school (an admin can lift any ban in the admin).
-    if v_sid is not null and (not exists (select 1 from public.players where student_id::text = v_sid)
-        or (select count(*) from private.bans where kind = 'student' and reason <> 'Banned by an admin'
-             and created_at > now() - interval '10 minutes') >= 20) then
-        v_sid := null;
-    end if;
-
-    if v_dev is not null then
-        insert into private.bans (kind, value, reason, details, device_id, student_id, user_agent)
-        values ('device', v_dev, v_reason, v_details, v_dev, v_sid, v_ua)
-        on conflict (kind, value) where lifted_at is null do nothing;
-    end if;
-    if v_sid is not null then
-        insert into private.bans (kind, value, reason, details, device_id, student_id, user_agent)
-        values ('student', v_sid, v_reason, v_details, v_dev, v_sid, v_ua)
-        on conflict (kind, value) where lifted_at is null do nothing;
-    end if;
-    return jsonb_build_object('banned', v_dev is not null or v_sid is not null);
-end $$;
+-- The app used to ban itself through this; that's been removed
+drop function if exists public.report_tamper(text, text, text, text);
 
 -- ---------- Enforcement ----------
 -- Trigger: TG_ARGV[0] names the student ID column. Admins are never blocked.
@@ -177,12 +146,10 @@ begin
 end $$;
 
 revoke all on function public.check_ban(text, text) from public;
-revoke all on function public.report_tamper(text, text, text, text) from public;
 revoke all on function public.admin_list_bans() from public, anon;
 revoke all on function public.admin_unban(bigint) from public, anon;
 revoke all on function public.admin_ban(text, text, text) from public, anon;
 grant execute on function public.check_ban(text, text) to anon, authenticated;
-grant execute on function public.report_tamper(text, text, text, text) to anon, authenticated;
 grant execute on function public.admin_list_bans() to authenticated;
 grant execute on function public.admin_unban(bigint) to authenticated;
 grant execute on function public.admin_ban(text, text, text) to authenticated;

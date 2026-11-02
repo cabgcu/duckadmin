@@ -779,7 +779,7 @@
             <p class="footnote">Reports are resolved automatically: a rescuer who names the duck (ID or code) gets that duck and it's flagged for reprinting; otherwise they get the standard points for that kind of duck and no other duck is used up. The first 5 Rebel duck and 10 hologram code reports per rescuer are honored automatically; after that they come here as Under review for you to approve or deny. Undo takes the points back (and re-opens a named duck).</p>
         </section>
 
-        <!-- Bans: devices and student IDs caught tampering (sql/bans.sql) -->
+        <!-- Bans: student IDs and devices banned by an admin (sql/bans.sql) -->
         <section id="panel-bans" class="table-container" hidden>
             <div class="filter-row">
                 <div class="search-wrapper">
@@ -814,7 +814,7 @@
                     <tbody id="ban-rows"></tbody>
                 </table>
             </div>
-            <p class="footnote">Duck Hunt bans a phone, and the student ID signed in on it, when it catches someone opening dev tools or view source, pausing the page in a debugger, or trying a burst of fake codes. A banned device or student ID can't sign in, register, scan or report codes, even by calling the database directly. Unban lifts just that one ban: a student whose phone is also banned needs both lifted to play on that phone.</p>
+            <p class="footnote">Duck Hunt doesn't ban anyone on its own; only bans added here with <b>Ban a student ID</b> apply. A banned device or student ID can't sign in, register, scan or report codes, even by calling the database directly. Unban lifts just that one ban: a student whose phone is also banned needs both lifted to play on that phone.</p>
         </section>
 
         <!-- Messages: announcements every player sees as a hologram pop-up -->
